@@ -16,38 +16,22 @@ says otherwise.
 
 ### Decisions
 
-1. **The product name.** Options: Method Launcher; Method Home; Method Hub. The suite's
-   pattern is "Method <Noun>" with the noun saying what the app does (SUITE-STANDARDS.md §2),
-   and the website already uses "hub" for its front page. **Recommend: Method Launcher**:
-   plain, and says what it does. Sets the repo (`method-launcher`), CLI
-   (`method-launcher`), window binary (`method-launcher-app`), bundle id
-   (`com.methodlauncher.desktop`) and download names (`Method-Launcher-macOS.dmg` and the
-   Windows and Linux equivalents).
-   **Built on the recommendation**; renaming before the first release is a search and
-   replace.
-2. **The accent colour.** The four apps use rose, violet, blue and teal. **Recommend:
-   ochre, `#9A5B00` light and `#F0B54A` dark** (5.4:1 on white and 10:1 on the dark
-   background, the same contrast range as the others), a hue none of the four uses.
-   Alternative: the suite's own neutral, to say "the suite" rather than "a fifth app".
-   **Built on the recommendation.**
-3. **The GitHub repository.** Create `method-production-suite/method-launcher`.
-   **Recommend: public from the start**, like Method Storyteller while in development:
-   on the org's free plan a private repository gets no branch rulesets (so `main` can't be
-   protected for MReview's flow) and its macOS CI runs count against a small monthly
-   allowance (the new three-system matrix, macOS included, runs on every change). Nothing
-   private is tracked (KICKOFF.md and HANDOFF.md are ignored). The kickoff says private until
-   the owner says otherwise, so this is the owner's call. Needs the owner's yes, relayed by
-   MOrg; then the first push and the ruleset are MOrg's.
-4. **Linux: AppImage or .deb by default** (spec §4.4). **Recommend: AppImage by default**,
-   in `~/Applications` with a desktop entry: no administrator password, the same on every
-   distribution, and replaceable in place for updates. The `.deb` stays a Settings choice on
-   systems with apt. **Built on the recommendation.**
-5. **Build the launcher for Linux arm64.** The suite has no arm64 app builds yet, so on ARM
-   Linux the launcher can only show the apps and link their build-from-source steps.
-   **Recommend: yes, once the repository is public**: GitHub's arm64 Linux runners are free
-   for public repositories, the launcher is small, and it is where those people will hear
-   when arm64 builds arrive. Skip it if the repository stays private. **Built on the
-   recommendation** (in the CI matrix; released with the first release).
+None open. Decided by the owner, 2026-10-18:
+
+1. **Name: Method Launcher.** Repo `method-launcher`, CLI `method-launcher`, window binary
+   `method-launcher-app`, bundle id `com.methodlauncher.desktop`, downloads
+   `Method-Launcher-macOS.dmg` and the Windows and Linux equivalents.
+2. **Accent: ochre**, `#9A5B00` light and `#F0B54A` dark.
+3. **Repository: public**, `method-production-suite/method-launcher`, `main` protected,
+   required checks the four CI gates.
+4. **Linux: the AppImage by default** (spec §4.4), the `.deb` a Settings choice on systems
+   with apt.
+5. **Linux arm64: build the launcher too** (the repository is public, so the runners are
+   free).
+6. **Cross-app rules adopted** into SUITE-STANDARDS.md §2 and §3: one `SHA256SUMS` per
+   release listing every file; `--check-for-updates` and `--open-sample` in every app; the
+   `recent.json` shape and data folders; the installed names. No catalog file or news feed in
+   the first version.
 
 ### Tests that need the owner's hands
 
@@ -60,24 +44,20 @@ None yet.
 
 ---
 
-## Cross-app items (through MOrg)
+## Cross-app items
 
-- **`SHA256SUMS` on every release**, one name, listing every asset with the installers
-  (spec §9.1). Today: Method Reader has the installers in `SHA256SUMS-app`; Method Schedule
-  v0.1.0 and Method Budget v0.4.0 have none, so the launcher can't install them on Windows
-  or Linux. Later: sign `SHA256SUMS` with each app's update key, so a checksum also proves
-  who made the release.
-- **Each app's Linux package name and Windows uninstall display name**, and its data folder
-  on Windows and Linux (spec §4.6, §6).
-- **Launch arguments** every app accepts: "check for updates now" and "open the sample"
-  (spec §5.1, §7). Recommend `--check-for-updates` and `--open-sample`, passed with
-  `open -b <id> --args`. Until an app has them, the launcher falls back as the spec says.
-- **The shared `recent.json` shape** (spec §6): a list of `{ "path": "/abs/path",
-  "opened": "RFC 3339" }`, newest first, in each app's data folder.
-- **A catalog file on methodproduction.com** (spec §9) and a "New in the apps" feed:
-  recommend later, not in the first version.
+Adopted into SUITE-STANDARDS.md §2 and §3 (2026-10-18); MOrg is asking each app. Until an
+app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
----
+- **`SHA256SUMS` on every release**, one name, every file (spec §9.1). Today Method Reader
+  has its installers in `SHA256SUMS-app`, and Method Schedule v0.1.0 and Method Budget v0.4.0
+  have none, so the launcher can't install those two on Windows or Linux yet. Later, signed
+  as `SHA256SUMS.minisig`.
+- **`--check-for-updates` and `--open-sample`** in every app's window binary.
+- **`recent.json`** as `[{"path": ..., "opened": ...}]`, newest first, in each app's data
+  folder.
+- **Installed names**: Linux package `method-<noun>` and desktop entry
+  `com.method<noun>.desktop.desktop`; Windows uninstall display name `Method <Noun>`.
 
 ## M1: The window and the catalog
 
@@ -89,9 +69,9 @@ None yet.
   target. Have: the traits, `Target`, and the names with their tests.
 - **[missing] S** The apps view (spec §3.1).
 - **[missing] M** `Locate` on each system: bundles by id on macOS, uninstall entries on
-  Windows, `installed.json` and `dpkg-query` on Linux.
-- **[missing] S** `Launch` on each system: open an app, show its location; Release notes
-  link.
+  Windows, `installed.json`, `dpkg-query` and `method-<noun>-app` on the PATH on Linux.
+- **[missing] S** `Launch` on each system: whether an app is running, open it (launch
+  arguments only when it isn't), show its location; Release notes link.
 - **[missing] S** Command line: `method-launcher list` and `status`.
 
 ## M2: Install
