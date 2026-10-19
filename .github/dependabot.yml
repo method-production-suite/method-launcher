@@ -1,0 +1,37 @@
+# Dependabot version updates, grouped into one weekly pull request per ecosystem
+# (SUITE-STANDARDS.md §6). Security updates are not grouped: each arrives on its own, as
+# soon as an advisory is published. Security alerts are on in the repository settings.
+version: 2
+updates:
+  # Actions are pinned to full commit SHAs; Dependabot bumps the hash and keeps the version
+  # comment honest.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # The Rust workspace. Cargo.lock pins every crate; a bump arrives only as one of these pull
+  # requests. The cooldown matches the 14-day crate-age check, so a version update is never
+  # too young for CI.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    cooldown:
+      default-days: 14
+      semver-major-days: 30
+    groups:
+      dependencies:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

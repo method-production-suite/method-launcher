@@ -15,6 +15,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 permissions:
   contents: read
+# Lean CI builds (SUITE-STANDARDS.md §6): no incremental state, and line tables only for
+# debug info, so caches stay small. Installers aren't built here; when the release workflow
+# lands, they build on main, on releases, and on pull requests that touch packaging.
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 jobs:
   gates:
     if: github.event_name != 'schedule'
@@ -31,6 +38,11 @@ jobs:
       - name: Linux packages for eframe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev
+      # Caches are saved only on main and only restored on pull requests, so the org stays
+      # under GitHub's cache limit (SUITE-STANDARDS.md §6).
+      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask ci
   cooldown:
     # Fails on crates published less than 14 days ago (scripts/check-crate-ages.py).
