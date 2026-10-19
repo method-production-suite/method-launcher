@@ -113,9 +113,19 @@ pub struct Status {
     pub busy: bool,
 }
 
-/// Whether this system installs from inside the launcher yet (macOS today).
+/// What the card says while the app is put in place, per system.
+fn installing_line() -> &'static str {
+    match Target::current() {
+        Some(Target::WindowsX64) => "The installer is open",
+        Some(Target::MacosArm64) => "Copying to Applications",
+        _ => "Installing",
+    }
+}
+
+/// Whether this system installs from inside the launcher: every system the suite builds apps
+/// for (macOS, Windows x64, Linux x86_64), not yet Linux on ARM.
 pub fn installs_here() -> bool {
-    Target::current() == Some(Target::MacosArm64)
+    buildable_here()
 }
 
 fn buildable_here() -> bool {
@@ -142,7 +152,7 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
                 Stage::Finding => "Finding the latest release".to_string(),
                 Stage::Downloading(bytes) => format!("Downloading, {:.1} MB", *bytes as f64 / 1_000_000.0),
                 Stage::Checking => "Checking the download".to_string(),
-                Stage::Copying => "Copying to Applications".to_string(),
+                Stage::Copying => installing_line().to_string(),
                 Stage::Quitting => format!("Waiting for {} to quit", app.name),
             };
             return Status { busy: true, ..plain(line) };

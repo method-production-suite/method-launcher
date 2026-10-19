@@ -16,9 +16,14 @@ pub fn appimage_path(app: &App) -> Option<PathBuf> {
 
 pub fn locate(app: &App) -> Option<Installed> {
     if let Some(path) = appimage_path(app).filter(|p| p.is_file()) {
-        // The version an AppImage was installed at is recorded by the launcher's installs
-        // (spec §4.4); until then it is unknown.
-        return Some(Installed { path, version: String::new(), legacy: false });
+        // The version the launcher installed (spec §4.4); unknown for one placed by hand.
+        let record = crate::install_linux::record_path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        let version = crate::parse::installed_record(&record)
+            .get(app.slug)
+            .filter(|(_, recorded)| std::path::Path::new(recorded) == path)
+            .map(|(version, _)| version.clone())
+            .unwrap_or_default();
+        return Some(Installed { path, version, legacy: false });
     }
     let path_var = std::env::var("PATH").unwrap_or_default();
     let binary = find_on_path(&app.binary(), &path_var, ':', &[]);

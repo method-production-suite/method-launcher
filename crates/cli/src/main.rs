@@ -8,7 +8,7 @@ use launcher_sys::System;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: method-launcher <list|catalog|status|latest|--version|--help>
-       method-launcher install <app> [--to <folder>]   (macOS: install or update from the latest release)
+       method-launcher install <app> [--to <folder>]   (install or update from the latest release; --to is macOS only)
        method-launcher verify <app> <path.app>          (macOS: the checks an install makes)";
 
 fn main() -> ExitCode {
@@ -93,24 +93,23 @@ fn downloads(app: &App) -> String {
     }
 }
 
-/// `install <app> [--to <folder>]`: the window's Install and Update, without a window.
-#[cfg(target_os = "macos")]
+/// `install <app> [--to <folder>]`: the window's Install and Update, without a window. The
+/// folder is for macOS (a scratch folder for testing); elsewhere the app goes where its
+/// installer puts it.
 fn install(args: &[String]) -> ExitCode {
     use launcher_sys::Stage;
     let Some(app) = args.first().and_then(|slug| launcher_core::catalog::by_slug(slug)) else {
-        eprintln!("method-launcher install: name an app: storyteller, reader, schedule or budget");
+        eprintln!("method-launcher install: name an app: {}", apps().iter().map(|a| a.slug).collect::<Vec<_>>().join(", "));
         return ExitCode::FAILURE;
     };
-    let dest = match args.get(1..) {
-        Some([flag, folder]) if flag == "--to" => std::path::PathBuf::from(folder),
-        Some([]) => std::path::PathBuf::from("/Applications"),
+    let folder = match args.get(1..) {
+        Some([flag, folder]) if flag == "--to" => Some(std::path::PathBuf::from(folder)),
+        Some([]) => None,
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::FAILURE;
         }
     };
-    // Replace the installed copy only when installing into the folder it is in.
-    let current = System.locate(app).filter(|found| found.path.parent() == Some(dest.as_path()));
     let last = std::cell::Cell::new(0u64);
     let report = |stage: Stage| match stage {
         Stage::Downloading(bytes) if bytes / 10_000_000 != last.get() / 10_000_000 => {
@@ -120,7 +119,22 @@ fn install(args: &[String]) -> ExitCode {
         Stage::Downloading(_) => {}
         other => eprintln!("  {other:?}"),
     };
-    match launcher_sys::install_macos::install(app, &dest, current.as_ref(), false, &report) {
+    let found = System.locate(app);
+    let result = match folder {
+        #[cfg(target_os = "macos")]
+        Some(dest) => {
+            // Replace the installed copy only when installing into the folder it is in.
+            let current = found.filter(|f| f.path.parent() == Some(dest.as_path()));
+            launcher_sys::install_macos::install(app, &dest, current.as_ref(), false, &report)
+        }
+        #[cfg(not(target_os = "macos"))]
+        Some(_) => {
+            eprintln!("method-launcher install: --to is for macOS only");
+            return ExitCode::FAILURE;
+        }
+        None => System.install(app, found.as_ref(), false, None, &report),
+    };
+    match result {
         Ok(found) => {
             println!("installed {} {} at {}", app.name, found.version, found.path.display());
             ExitCode::SUCCESS
@@ -130,12 +144,6 @@ fn install(args: &[String]) -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn install(_args: &[String]) -> ExitCode {
-    eprintln!("method-launcher install: installing from here comes to this system later; use the app's download page for now");
-    ExitCode::FAILURE
 }
 
 /// `verify <app> <path.app>`: the checks an install makes on a bundle (spec §4.2 step 2).

@@ -88,22 +88,25 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   the installed copy, and replacing an earlier-named copy.
 - **[partial] S** macOS: administrator prompt (built, not yet tried) and the
   `~/Applications` choice (missing).
-- **[missing] S** Windows: run the setup per user and confirm (spec §4.3); Authenticode once
-  the suite signs Windows builds.
-- **[missing] M** Linux: AppImage with desktop entry; `.deb` through pkexec and apt; the ARM
-  message (spec §4.4).
+- **[partial] S** Windows: the setup checked against `SHA256SUMS`, run per user with its own
+  window, then confirmed by looking again (spec §4.3). Built and cross-checked, not yet run
+  on a Windows machine. Missing: Authenticode, once the suite signs Windows builds.
+- **[partial] M** Linux: the AppImage checked against `SHA256SUMS`, placed in
+  `~/Applications` through a staging name, with a menu entry and icon, and its version
+  recorded (spec §4.4); the ARM message. Built and cross-checked, not yet run on a Linux
+  machine. Missing: the `.deb` choice through pkexec and apt, and the FUSE help link.
 - **[missing] S** Every failure case in spec §8, with a test each; leftover cleanup at
   launch.
-- **[have] S** `method-launcher verify <app> <path>`, `install <app> --to <folder>` and
-  `latest` (macOS).
+- **[have] S** `method-launcher verify <app> <path>` (macOS), `install <app>` (every system;
+  `--to <folder>` on macOS), `latest` and `catalog`.
 
 ## M3: Updates, recent files, samples
 
 - **[partial] M** Updates run by the launcher (spec §5.1): "Update available", Update to X,
-  ask before quitting an open app, Update all. Have: all of it on macOS, checked at launch
-  and on Refresh. Missing: Windows and Linux (with their installs, M2), the 6-hour schedule
-  and the switch.
-- **[missing] S** Recent files across the apps (spec §6).
+  ask before quitting an open app, Update all, and the switch. Have: all of it, on every
+  system (Windows and Linux built, not yet run on those machines), checked at launch and on
+  Refresh. Missing: the 6-hour schedule.
+- **[have] S** Recent files across the apps (spec §6).
 - **[missing] S** Open Sample through `--open-sample`, with the fallback.
 
 ## M4: Help, identity, its own updates

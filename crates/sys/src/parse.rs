@@ -108,6 +108,68 @@ pub fn hdiutil_mount_point(plist: &str) -> Option<String> {
     points.next().is_none().then_some(first)
 }
 
+/// A path as one argument in a desktop entry's `Exec` line: double-quoted, with `"`, `` ` ``,
+/// `$` and `\` escaped (the Desktop Entry Specification), and `%` doubled.
+pub fn desktop_exec_quote(path: &str) -> String {
+    let mut out = String::from("\"");
+    for c in path.chars() {
+        match c {
+            '"' | '`' | '$' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '%' => out.push_str("%%"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The menu entry the launcher writes for an AppImage it installed (docs/spec.md §4.4).
+pub fn desktop_entry(name: &str, comment: &str, appimage: &str, icon: &str, wm_class: &str) -> String {
+    let clean = |s: &str| s.replace(['\n', '\r'], " ");
+    format!(
+        "[Desktop Entry]\nType=Application\nName={}\nComment={}\nExec={} %F\nIcon={}\nTerminal=false\nCategories=AudioVideo;Office;\nStartupWMClass={}\nX-Method-Launcher=installed\n",
+        clean(name),
+        clean(comment),
+        desktop_exec_quote(appimage),
+        clean(icon),
+        clean(wm_class)
+    )
+}
+
+/// The launcher's record of what it installed (`installed.json` in its data folder): for each
+/// app slug, the version and the file. Linux AppImages carry no version the launcher can read
+/// without running them, so this is where it comes from (spec §4.6).
+pub fn installed_record(json: &str) -> std::collections::BTreeMap<String, (String, String)> {
+    let value: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    value
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .filter_map(|(slug, entry)| {
+                    let version = entry.get("version")?.as_str()?.to_string();
+                    let path = entry.get("path")?.as_str()?.to_string();
+                    Some((slug.clone(), (version, path)))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `installed.json` with one app's entry set.
+pub fn with_installed(json: &str, slug: &str, version: &str, path: &str) -> String {
+    let mut value: serde_json::Value = serde_json::from_str(json).unwrap_or_else(|_| serde_json::json!({}));
+    if !value.is_object() {
+        value = serde_json::json!({});
+    }
+    if let Some(map) = value.as_object_mut() {
+        map.insert(slug.to_string(), serde_json::json!({ "version": version, "path": path }));
+    }
+    format!("{value:#}\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +229,34 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Meth
         assert_eq!(find_on_path("method-budget-app", &path_var, sep, &[]), None);
         assert_eq!(find_on_path("method-schedule-app", &path_var, sep, &[".exe"]), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn writes_desktop_entries() {
+        assert_eq!(desktop_exec_quote("/home/a b/Method-Budget.AppImage"), "\"/home/a b/Method-Budget.AppImage\"");
+        assert_eq!(desktop_exec_quote("/x/$HOME`\"\\100%"), "\"/x/\\$HOME\\`\\\"\\\\100%%\"");
+        let entry = desktop_entry(
+            "Method Budget",
+            "Film and TV budgeting.",
+            "/home/you/Applications/Method-Budget.AppImage",
+            "method-budget",
+            "method-budget-app",
+        );
+        assert!(entry.starts_with("[Desktop Entry]\nType=Application\nName=Method Budget\n"));
+        assert!(entry.contains("Exec=\"/home/you/Applications/Method-Budget.AppImage\" %F\n"));
+        assert!(entry.contains("Icon=method-budget\n"));
+        assert_eq!(desktop_entry("A\nB", "c", "/p", "i", "w").lines().nth(2), Some("Name=A B"));
+    }
+
+    #[test]
+    fn keeps_a_record_of_installs() {
+        let json = with_installed("", "budget", "0.5.0", "/home/you/Applications/Method-Budget.AppImage");
+        let json = with_installed(&json, "schedule", "0.2.0", "/home/you/Applications/Method-Schedule.AppImage");
+        let json = with_installed(&json, "budget", "0.5.1", "/home/you/Applications/Method-Budget.AppImage");
+        let record = installed_record(&json);
+        assert_eq!(record.get("budget"), Some(&("0.5.1".to_string(), "/home/you/Applications/Method-Budget.AppImage".to_string())));
+        assert_eq!(record.len(), 2);
+        assert!(installed_record("not json").is_empty());
     }
 
     #[test]

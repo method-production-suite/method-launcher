@@ -68,10 +68,7 @@ enum Event {
     Catalog(String, Vec<App>),
     /// The launcher's own latest release, when it is newer than this one.
     LauncherNewer(String),
-    // Installs run from the launcher on macOS only, so far.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Stage(usize, Stage),
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Done(usize, Result<Installed, InstallError>),
 }
 
@@ -398,15 +395,12 @@ impl Launcher {
         }
     }
 
-    #[cfg(target_os = "macos")]
     fn start_install(&mut self, ctx: &egui::Context, index: usize, quit: bool) {
         let Some(app) = self.apps.get(index) else { return };
         let current = match self.found.get(index) {
             Some(Found::Installed(installed)) => Some(installed.clone()),
             _ => None,
         };
-        // An update goes where the installed copy is; a new install into /Applications.
-        let dest = current.as_ref().and_then(|c| c.path.parent().map(PathBuf::from)).unwrap_or_else(|| PathBuf::from("/Applications"));
         set(&mut self.jobs, index, Job::Running(Stage::Finding));
         let (send, ctx) = (self.send.clone(), ctx.clone());
         std::thread::spawn(move || {
@@ -414,17 +408,10 @@ impl Launcher {
                 let _ = send.send(Event::Stage(index, stage));
                 ctx.request_repaint();
             };
-            let result = launcher_sys::install_macos::install(app, &dest, current.as_ref(), quit, &report);
+            let result = System.install(app, current.as_ref(), quit, mark_png(app), &report);
             let _ = send.send(Event::Done(index, result));
             ctx.request_repaint();
         });
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn start_install(&mut self, _ctx: &egui::Context, index: usize, _quit: bool) {
-        if let Some(app) = self.apps.get(index) {
-            self.link(&app.releases_url());
-        }
     }
 
     fn open(&mut self, app: &App, installed: &Installed) {

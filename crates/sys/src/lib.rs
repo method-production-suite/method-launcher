@@ -3,11 +3,16 @@
 //! only tools that ship with it. What those tools print is read in [`parse`], tested
 //! everywhere.
 
+pub mod fetch;
 pub mod net;
 pub mod parse;
 
+#[cfg(target_os = "linux")]
+pub mod install_linux;
 #[cfg(target_os = "macos")]
 pub mod install_macos;
+#[cfg(target_os = "windows")]
+pub mod install_windows;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -99,6 +104,35 @@ impl std::fmt::Display for InstallError {
 }
 
 impl System {
+    /// Installs or updates `app` from its latest release on this system (spec §4): over
+    /// `current` when there is one, asking it to quit first when `quit` says the person agreed.
+    /// `icon_png` is the app's mark, for the Linux menu entry.
+    pub fn install(
+        &self,
+        app: &App,
+        current: Option<&Installed>,
+        quit: bool,
+        icon_png: Option<&[u8]>,
+        stage: &dyn Fn(Stage),
+    ) -> Result<Installed, InstallError> {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = icon_png;
+            // An update goes where the installed copy is; a new install into /Applications.
+            let dest = current.and_then(|c| c.path.parent().map(PathBuf::from)).unwrap_or_else(|| PathBuf::from("/Applications"));
+            install_macos::install(app, &dest, current, quit, stage)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = icon_png;
+            install_windows::install(app, current, quit, stage)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            install_linux::install(app, current, quit, icon_png, stage)
+        }
+    }
+
     /// A fresh path in the launcher's cache for a scratch or downloaded file.
     pub fn scratch(&self, name: &str) -> Option<PathBuf> {
         use std::sync::atomic::{AtomicU64, Ordering};

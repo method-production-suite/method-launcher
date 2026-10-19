@@ -10,15 +10,13 @@
 //! removed only after that worked. An app installed under its earlier name is replaced by the
 //! new one under its current name.
 
+use crate::fetch::{fail, fetch_verified};
 use crate::macos::info;
-use crate::net::{self, LARGE, NetError};
 use crate::parse::hdiutil_mount_point;
 use crate::{InstallError, Stage, System};
 use launcher_core::catalog::App;
-use launcher_core::checksums::{self, Hasher};
 use launcher_core::macho;
 use launcher_core::platform::{Folders, Installed, Kind, Launch};
-use launcher_core::release::tag_from_location;
 use launcher_core::verify::{self, CODESIGN, DITTO, HDIUTIL, SPCTL};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -26,19 +24,6 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const OSASCRIPT: &str = "/usr/bin/osascript";
-
-fn fail(message: impl Into<String>, details: impl Into<String>) -> InstallError {
-    InstallError::new(message, details)
-}
-
-fn net_fail(app: &App, e: &NetError) -> InstallError {
-    match e {
-        NetError::NotFound => fail(format!("{} has no download for this Mac yet.", app.name), e.to_string()),
-        NetError::Redirected(_) => fail("The download came from somewhere unexpected, so it was stopped.", e.to_string()),
-        NetError::Stopped(_) => fail("The download stopped. Try again.", e.to_string()),
-        _ => fail("GitHub didn't answer. Check the connection and try again.", e.to_string()),
-    }
-}
 
 /// Runs a tool, returning its status and what it wrote to stdout and stderr together.
 fn tool(program: &str, args: &[&str]) -> Result<(bool, String), String> {
@@ -63,57 +48,8 @@ pub fn install(app: &App, dest_dir: &Path, current: Option<&Installed>, quit: bo
         stage(Stage::Quitting);
         quit_app(app, current)?;
     }
-    let file = app.installer(Kind::Dmg).ok_or_else(|| fail(format!("{} has no download yet.", app.name), "no release"))?;
-
-    // 1. Pin the release: the checksums and the image come from the same tag.
-    stage(Stage::Finding);
-    let scratch = system.scratch(&format!("{}-redirect", app.slug)).ok_or_else(|| fail("The launcher has no cache folder.", ""))?;
-    let location = net::redirect_of(&app.latest_url(), &scratch).map_err(|e| net_fail(app, &e))?;
-    let tag = tag_from_location(&location).ok_or_else(|| fail("The latest release isn't what we expected.", location.clone()))?;
-
-    // 2. Checksums, where the release has them (an extra check on macOS, spec §4.1).
-    let mut expected = None;
-    for name in checksums::FILES {
-        let scratch = system.scratch(&format!("{}-{name}", app.slug)).ok_or_else(|| fail("The launcher has no cache folder.", ""))?;
-        match net::fetch_text(&app.asset_url(&tag, name), &scratch) {
-            Ok(sums) => {
-                expected = checksums::lookup(&sums, &file);
-                if expected.is_some() {
-                    break;
-                }
-            }
-            Err(NetError::NotFound) => {}
-            Err(e) => return Err(net_fail(app, &e)),
-        }
-    }
-
-    // 3. Download, reporting the bytes so far.
-    let dmg = system.scratch(&format!("{}.dmg", app.slug)).ok_or_else(|| fail("The launcher has no cache folder.", ""))?;
-    let url = app.asset_url(&tag, &file);
-    let downloaded = {
-        let target = dmg.clone();
-        let worker = std::thread::spawn(move || net::download(&url, &target, LARGE));
-        while !worker.is_finished() {
-            stage(Stage::Downloading(std::fs::metadata(&dmg).map(|m| m.len()).unwrap_or(0)));
-            std::thread::sleep(Duration::from_millis(250));
-        }
-        worker.join().unwrap_or_else(|_| Err(NetError::Local("the download stopped unexpectedly".into())))
-    };
-    let result = downloaded.map_err(|e| net_fail(app, &e)).and_then(|()| {
-        stage(Stage::Checking);
-        if let Some(expected) = &expected {
-            let actual = hash_file(&dmg).map_err(|e| fail("The download couldn't be read.", e))?;
-            if !actual.eq_ignore_ascii_case(expected) {
-                return Err(fail(
-                    "The download doesn't match the release's checksum, so it was deleted. Try again.",
-                    format!("expected {expected}, got {actual}"),
-                ));
-            }
-        }
-        install_from_image(app, &dmg, dest_dir, current, stage)
-    });
-    let _ = std::fs::remove_file(&dmg);
-    result
+    let fetched = fetch_verified(app, Kind::Dmg, false, stage)?;
+    install_from_image(app, &fetched.file, dest_dir, current, stage)
 }
 
 /// Asks a running app to quit the way the Quit menu does, so it can ask about unsaved work,
@@ -135,19 +71,6 @@ fn quit_app(app: &App, current: &Installed) -> Result<(), InstallError> {
         std::thread::sleep(Duration::from_millis(500));
     }
     Err(fail(format!("{} is still open, so it wasn't updated.", app.name), "it didn't quit within two minutes"))
-}
-
-fn hash_file(path: &Path) -> Result<String, String> {
-    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut hasher = Hasher::default();
-    let mut buffer = vec![0; 1 << 16];
-    loop {
-        let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
-        if n == 0 {
-            return Ok(hasher.hex());
-        }
-        hasher.update(buffer.get(..n).unwrap_or_default());
-    }
 }
 
 /// Mounts a downloaded image read-only, verifies and installs its app, and always detaches.

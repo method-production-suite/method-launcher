@@ -321,7 +321,8 @@ macOS first; each app's own updater stays a second way.
   update it." with **Quit and update** and **Cancel**. On macOS it asks the app to quit the
   way its Quit menu does (macOS asks once whether Method Launcher may control it) and waits
   up to two minutes; if the app is still open, nothing is replaced ("Method Budget is still
-  open, so it wasn't updated").
+  open, so it wasn't updated"). On Windows it asks the app to close its windows (`taskkill`
+  without `/F`), and on Linux it sends the app SIGTERM, each with the same two minutes.
 - **An earlier name is replaced.** An app installed under its earlier name or file name
   (Method Reader as Screepub Desktop) is installed under its current name, and the earlier
   copy removed once the new one is in place.
