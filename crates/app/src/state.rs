@@ -259,6 +259,10 @@ mod tests {
 
     #[test]
     fn not_installed_says_what_is_available() {
+        // Only where the suite publishes app builds (not yet Linux on ARM).
+        if !buildable_here() {
+            return;
+        }
         let schedule = by_slug("schedule").unwrap();
         let s = status(schedule, &Found::Missing, &release("0.1.0"), &Job::Idle);
         assert_eq!(s.line, "Not installed");

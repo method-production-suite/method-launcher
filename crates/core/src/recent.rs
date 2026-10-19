@@ -76,18 +76,26 @@ pub fn rfc3339_seconds(text: &str) -> Option<i64> {
 mod tests {
     use super::*;
 
+    /// A folder that is absolute on this system (`C:/Films` on Windows, `/Films` elsewhere).
+    const FILMS: &str = if cfg!(windows) { "C:/Films" } else { "/Films" };
+
     #[test]
     fn reads_the_suite_shape() {
-        let json = r#"[{"path":"/Films/Field Station/field-station.osf","opened":"2026-10-19T04:18:39Z"},{"path":"relative.osf"},{"nope":1}]"#;
-        assert_eq!(parse(json), vec![Entry { path: PathBuf::from("/Films/Field Station/field-station.osf"), opened: Some(1_792_383_519) }]);
+        let json = format!(
+            r#"[{{"path":"{FILMS}/Field Station/field-station.osf","opened":"2026-10-19T04:18:39Z"}},{{"path":"relative.osf"}},{{"nope":1}}]"#
+        );
+        assert_eq!(
+            parse(&json),
+            vec![Entry { path: PathBuf::from(format!("{FILMS}/Field Station/field-station.osf")), opened: Some(1_792_383_519) }]
+        );
     }
 
     #[test]
     fn reads_the_earlier_shape() {
-        let json = r#"{"files":["/Films/Field Station/schedule.mtsc","/Films/b.mtsc"],"bookmarks":{}}"#;
-        let entries = parse(json);
+        let json = format!(r#"{{"files":["{FILMS}/Field Station/schedule.mtsc","{FILMS}/b.mtsc"],"bookmarks":{{}}}}"#);
+        let entries = parse(&json);
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0], Entry { path: PathBuf::from("/Films/Field Station/schedule.mtsc"), opened: None });
+        assert_eq!(entries[0], Entry { path: PathBuf::from(format!("{FILMS}/Field Station/schedule.mtsc")), opened: None });
     }
 
     #[test]
