@@ -87,6 +87,17 @@ Ochre (`#9A5B00` light, `#F0B54A` dark) is the launcher's own accent, for its ow
 buttons (Update all, Quit and update) and focus only; each app's card uses that app's
 accent for its main button, as the suite's website does.
 
+The layout (a design pass, 2026-10-19): one 4-point grid with 32-point margins; the
+wordmark and the promise top left, and "Checked N minutes ago", Refresh and Update all top
+right, on the cards' edges; two columns of cards from 820 points wide; a footer that says
+where downloads come from. Every card has the same rows: the app's icon (56 points, the
+installed app's own icon trimmed to its shape, or the app's mark) with its name and one
+line; a status line with a small tag ("0.5.0 available" in the app's accent, "Up to date",
+"In development"); up to two quieter lines (the release date and the first sentence of its
+notes, or what went wrong); and one action row with a single filled button and quiet links,
+centred on one line. An app that can't be installed here gets a quiet link, never a filled
+button.
+
 ### 3.1 The apps
 
 The main view. One card per catalog app, in catalog order, one column at narrow widths and two

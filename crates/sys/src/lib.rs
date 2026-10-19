@@ -109,11 +109,11 @@ impl System {
         Some(dir.join(format!("{name}-{}-{n}", std::process::id())))
     }
 
-    /// The version of an app's latest release, from its `latest.json` (spec §5.1).
-    pub fn latest_version(&self, app: &App) -> Result<String, String> {
+    /// An app's latest release, from its `latest.json` (spec §5.1): version, date, what's new.
+    pub fn latest_release(&self, app: &App) -> Result<launcher_core::release::Release, String> {
         let scratch = self.scratch(&format!("{}-latest.json", app.slug)).ok_or("no cache folder")?;
         let json = net::fetch_text(&app.manifest_url(), &scratch).map_err(|e| e.to_string())?;
-        launcher_core::release::manifest_version(&json).ok_or_else(|| "the release's latest.json has no version".to_string())
+        launcher_core::release::manifest(&json).ok_or_else(|| "the release's latest.json has no version".to_string())
     }
 
     /// An installed app's own icon as PNG bytes, about 256 pixels, if this system can read it

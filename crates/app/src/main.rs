@@ -10,11 +10,11 @@ mod theme;
 #[cfg(test)]
 mod screens;
 
-use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png};
+use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png, trim};
 use launcher_core::catalog::{APPS, App};
 use launcher_core::platform::{Installed, Launch, Locate, Opened};
 use launcher_sys::{InstallError, Stage, System};
-use state::{Found, Job, Latest, Primary, installs_here, primary, primary_label, status_line};
+use state::{Badge, Found, Job, Latest, Primary, installs_here, primary, primary_label, status};
 use std::collections::{HashSet, VecDeque};
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
@@ -23,7 +23,16 @@ use std::sync::{Arc, mpsc};
 const APP_NAME: &str = "Method Launcher";
 
 /// Wide enough for two cards side by side.
-const TWO_COLUMNS_FROM: f32 = 860.0;
+const TWO_COLUMNS_FROM: f32 = 820.0;
+
+// The window's grid, in points: everything sits on multiples of 4.
+const PAD: f32 = 32.0;
+const CARD_GAP: f32 = 16.0;
+const CARD_PAD: f32 = 24.0;
+const CARD_RADIUS: f32 = 14.0;
+const ICON: f32 = 56.0;
+const ACTION_HEIGHT: f32 = 36.0;
+const WORDMARK_HEIGHT: f32 = 28.0;
 
 /// Text on an accent button in dark mode (the sites' `--accent-ink`).
 const DARK_INK: egui::Color32 = egui::Color32::from_rgb(0x11, 0x14, 0x17);
@@ -33,7 +42,7 @@ fn main() -> eframe::Result<()> {
         println!("method-launcher-app {} ({APP_NAME})", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([980.0, 680.0]).with_min_inner_size([720.0, 520.0]);
+    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([1000.0, 680.0]).with_min_inner_size([760.0, 560.0]);
     if let Some(icon) = decode_png(WINDOW_ICON) {
         viewport =
             viewport.with_icon(Arc::new(egui::IconData { width: icon.width() as u32, height: icon.height() as u32, rgba: icon.as_raw().to_vec() }));
@@ -67,6 +76,9 @@ struct Launcher {
     /// and which of them are running.
     confirm: Option<(Vec<usize>, Vec<usize>)>,
     scanning: bool,
+    /// Version checks still running, and when the last round finished.
+    checking: usize,
+    checked: Option<std::time::SystemTime>,
     send: mpsc::Sender<Event>,
     receive: mpsc::Receiver<Event>,
     /// Each app's mark, and its own icon once found installed, ready to draw.
@@ -95,6 +107,8 @@ impl Launcher {
             queue: VecDeque::new(),
             confirm: None,
             scanning: false,
+            checking: 0,
+            checked: None,
             send,
             receive,
             marks,
@@ -127,7 +141,7 @@ impl Launcher {
                 .iter()
                 .map(|app| {
                     let installed = System.locate(app);
-                    let icon = installed.as_ref().and_then(|i| System.app_icon(app, i)).and_then(|png| decode_png(&png));
+                    let icon = installed.as_ref().and_then(|i| System.app_icon(app, i)).and_then(|png| decode_png(&png)).map(trim);
                     (installed, icon)
                 })
                 .collect();
@@ -138,10 +152,14 @@ impl Launcher {
 
     /// Reads every released app's latest version (spec §5.1), each on its own thread.
     fn check_latest(&mut self, ctx: &egui::Context) {
+        if self.checking > 0 {
+            return;
+        }
+        self.checking = APPS.iter().filter(|a| a.released).count();
         for (index, app) in APPS.iter().enumerate().filter(|(_, a)| a.released) {
             let (send, ctx) = (self.send.clone(), ctx.clone());
             std::thread::spawn(move || {
-                let latest = System.latest_version(app).map_or_else(Latest::Failed, Latest::Version);
+                let latest = System.latest_release(app).map_or_else(Latest::Failed, Latest::Release);
                 let _ = send.send(Event::Latest(index, latest));
                 ctx.request_repaint();
             });
@@ -162,7 +180,13 @@ impl Launcher {
                     self.found = found.into_iter().map(|(f, _)| f.map_or(Found::Missing, Found::Installed)).collect();
                     self.scanning = false;
                 }
-                Event::Latest(index, latest) => set(&mut self.latest, index, latest),
+                Event::Latest(index, latest) => {
+                    set(&mut self.latest, index, latest);
+                    self.checking = self.checking.saturating_sub(1);
+                    if self.checking == 0 {
+                        self.checked = Some(std::time::SystemTime::now());
+                    }
+                }
                 Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
                 Event::Done(index, result) => {
                     let app = APPS.get(index).map_or("The app", |a| a.name);
@@ -321,76 +345,94 @@ impl Launcher {
         }
     }
 
-    fn card(&mut self, ui: &mut egui::Ui, index: usize, app: &App) {
+    /// Whether the app at `index` has a second line to show (detail or a failure).
+    fn has_detail(&self, index: usize) -> bool {
+        let (Some(app), Some(found), Some(latest), Some(job)) =
+            (APPS.get(index), self.found.get(index), self.latest.get(index), self.jobs.get(index))
+        else {
+            return false;
+        };
+        matches!(job, Job::Failed(_)) || status(app, found, latest, job).detail.is_some()
+    }
+
+    /// One app's card. `detail` holds two lines for detail, so the cards in a row line up.
+    fn card(&mut self, ui: &mut egui::Ui, index: usize, app: &App, detail: bool) {
         let dark = ui.visuals().dark_mode;
         let accent = colour(if dark { app.accent.1 } else { app.accent.0 });
         let found = self.found.get(index).cloned().unwrap_or_default();
         let latest = self.latest.get(index).cloned().unwrap_or_default();
         let job = self.jobs.get(index).cloned().unwrap_or_default();
         let picture = self.icons.get(index).cloned().flatten().or_else(|| self.marks.get(index).cloned().flatten());
-        let (line, news) = status_line(app, &found, &latest, &job);
+        let status = status(app, &found, &latest, &job);
         let main = primary(app, &found, &latest, &job);
-        let quiet = ui.visuals().weak_text_color();
+        let muted = ui.visuals().weak_text_color();
 
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-            .corner_radius(14.0)
-            .inner_margin(20.0)
+            .corner_radius(CARD_RADIUS)
+            .inner_margin(CARD_PAD)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                // Name row: icon, name and one line, centred on the icon.
                 ui.horizontal(|ui| {
-                    let size = egui::vec2(60.0, 60.0);
+                    ui.set_height(ICON);
+                    let size = egui::vec2(ICON, ICON);
                     match &picture {
                         Some(texture) => {
-                            ui.add(egui::Image::new((texture.id(), size)).corner_radius(13.0));
+                            ui.add(egui::Image::new((texture.id(), size)).corner_radius(ICON * 0.2237));
                         }
                         None => {
                             let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                            ui.painter().rect_filled(rect, 13.0, accent);
+                            ui.painter().rect_filled(rect, ICON * 0.2237, accent);
                         }
                     }
-                    ui.add_space(6.0);
+                    ui.add_space(16.0);
                     ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(app.name).size(21.0).strong());
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new(app.tagline).size(14.0));
+                        ui.add_space(7.0);
+                        ui.label(egui::RichText::new(app.name).size(19.0).strong());
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(app.tagline).size(14.0).color(muted));
                     });
                 });
-                ui.add_space(14.0);
-                let line_colour = if news { accent } else { quiet };
+                ui.add_space(18.0);
+                // Status row: where it stands, and a tag.
                 ui.horizontal(|ui| {
-                    if matches!(job, Job::Running(_) | Job::Waiting) || matches!(found, Found::Looking) {
-                        ui.spinner();
+                    ui.set_height(22.0);
+                    if status.busy {
+                        ui.add(egui::Spinner::new().size(14.0));
+                        ui.add_space(8.0);
                     }
-                    ui.label(egui::RichText::new(line).size(15.0).color(line_colour));
+                    ui.label(egui::RichText::new(&status.line).size(15.0));
+                    if let Some(tag) = &status.badge {
+                        ui.add_space(10.0);
+                        badge(ui, tag, app);
+                    }
                 });
-                if let Job::Failed(error) = &job {
-                    ui.add_space(6.0);
-                    ui.label(egui::RichText::new(&error.message).size(14.0).color(ui.visuals().error_fg_color));
-                    if !error.details.is_empty() {
-                        let open = self.details.contains(&index);
-                        if ui
-                            .add(
-                                egui::Button::new(egui::RichText::new(if open { "Hide details" } else { "Details" }).size(13.0).color(quiet))
-                                    .frame(false),
-                            )
-                            .clicked()
-                        {
-                            if open {
-                                self.details.remove(&index);
-                            } else {
-                                self.details.insert(index);
+                // Two lines held for detail when any card in the row has some.
+                let detail_height = if detail { 38.0 } else { 0.0 };
+                ui.add_space(if detail { 6.0 } else { 0.0 });
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), detail_height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_min_height(detail_height);
+                    match &job {
+                        Job::Failed(error) => {
+                            let text = if self.details.contains(&index) && !error.details.is_empty() { &error.details } else { &error.message };
+                            two_lines(ui, text, 13.5, ui.visuals().error_fg_color);
+                        }
+                        _ => {
+                            if let Some(detail) = &status.detail {
+                                two_lines(ui, detail, 13.5, muted);
                             }
                         }
-                        if open {
-                            ui.add(egui::Label::new(egui::RichText::new(&error.details).size(12.0).monospace().color(quiet)).wrap());
-                        }
                     }
-                }
-                ui.add_space(14.0);
-                ui.horizontal_wrapped(|ui| {
-                    if main != Primary::None {
+                });
+                ui.add_space(16.0);
+                // Action row: the main button, then quieter links, on one centre line.
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), ACTION_HEIGHT), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_min_height(ACTION_HEIGHT);
+                    ui.spacing_mut().item_spacing = egui::vec2(18.0, 0.0);
+                    if main.filled() {
                         let label = match (&job, &main) {
                             (Job::Failed(_), Primary::Install { .. } | Primary::Update(_)) => "Try again".to_string(),
                             _ => primary_label(app, &main),
@@ -398,27 +440,36 @@ impl Launcher {
                         if ui.add(accent_button(ui, &label, app.accent)).clicked() {
                             self.act(ui.ctx(), index, app, &found, &main);
                         }
-                        ui.add_space(10.0);
+                        ui.add_space(4.0);
+                    } else if main != Primary::None && link(ui, &primary_label(app, &main)) {
+                        self.act(ui.ctx(), index, app, &found, &main);
                     }
-                    let secondary = |ui: &mut egui::Ui, text: &str| {
-                        ui.add(egui::Button::new(egui::RichText::new(text).size(14.0).color(quiet)).frame(false))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                    };
+                    if let Job::Failed(error) = &job
+                        && !error.details.is_empty()
+                    {
+                        let open = self.details.contains(&index);
+                        if link(ui, if open { "Hide details" } else { "Details" }) {
+                            if open {
+                                self.details.remove(&index);
+                            } else {
+                                self.details.insert(index);
+                            }
+                        }
+                    }
                     if let Found::Installed(installed) = &found {
-                        if main != Primary::Open && !matches!(job, Job::Running(_)) && secondary(ui, "Open") {
+                        if main != Primary::Open && !matches!(job, Job::Running(_)) && link(ui, "Open") {
                             self.open(app, installed);
                         }
-                        if secondary(ui, SHOW_LOCATION)
+                        if link(ui, SHOW_LOCATION)
                             && let Err(e) = System.show_location(&installed.path)
                         {
                             self.notice = Some((format!("{} couldn't be shown. {e}", app.name), true));
                         }
                     }
-                    if app.released && secondary(ui, "Release notes") {
+                    if app.released && link(ui, "Release notes") {
                         self.link(&app.releases_url());
                     }
-                    if main != Primary::VisitSite && !matches!(found, Found::Installed(_)) && secondary(ui, "Website") {
+                    if !matches!(found, Found::Installed(_)) && main != Primary::VisitSite && link(ui, "Website") {
                         self.link(app.site);
                     }
                 });
@@ -493,58 +544,138 @@ impl eframe::App for Launcher {
             self.rescan(&ctx);
             self.check_latest(&ctx);
         }
+        // "Checked 3 minutes ago" stays true.
+        ctx.request_repaint_after(std::time::Duration::from_secs(30));
 
         self.confirm_quit(&ctx);
-        egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(28.0)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(PAD)).show(ui, |ui| {
+            let muted = ui.visuals().weak_text_color();
+            // Header: the suite's wordmark and the promise on the left, the launcher's own
+            // buttons on the right, both on the cards' edges.
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     let dark = ui.visuals().dark_mode;
                     if let Some(wordmark) = self.wordmark.get(usize::from(dark)).cloned().flatten() {
-                        let height = 30.0;
                         let size = wordmark.size_vec2();
-                        ui.add(egui::Image::new((wordmark.id(), egui::vec2(height * size.x / size.y, height))));
+                        ui.add(egui::Image::new((wordmark.id(), egui::vec2(WORDMARK_HEIGHT * size.x / size.y, WORDMARK_HEIGHT))));
                     } else {
                         ui.label(egui::RichText::new("Method Production Suite").size(24.0).strong());
                     }
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new("Install the apps you want. Each one updates itself.").size(15.0).color(ui.visuals().weak_text_color()),
-                    );
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new("Install the apps you want. Each one updates itself.").size(15.0).color(muted));
                 });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
                     let updatable = self.updatable();
                     if installs_here() && !updatable.is_empty() {
                         let label = format!("Update all ({})", updatable.len());
                         if ui.add(accent_button(ui, &label, LAUNCHER_ACCENT)).clicked() {
                             self.request_install(&ctx, updatable);
                         }
-                        ui.add_space(8.0);
                     }
                     let refresh = egui::Button::new(egui::RichText::new("Refresh").size(15.0)).corner_radius(8.0);
-                    if ui.add_enabled(!self.scanning, refresh).clicked() {
+                    if ui.add_enabled(!self.scanning && self.checking == 0, refresh).on_hover_text("Look again (⌘R)").clicked() {
                         self.rescan(&ctx);
                         self.check_latest(&ctx);
                     }
+                    let checked = match (self.checking, self.checked) {
+                        (0, Some(at)) => format!("Checked {}", ago(at)),
+                        (0, None) => String::new(),
+                        _ => "Checking for updates".to_string(),
+                    };
+                    ui.label(egui::RichText::new(checked).size(13.0).color(muted));
                 });
             });
             if let Some((text, error)) = &self.notice {
-                ui.add_space(10.0);
+                ui.add_space(14.0);
                 let colour = if *error { ui.visuals().error_fg_color } else { ui.visuals().text_color() };
                 ui.label(egui::RichText::new(text).size(14.0).color(colour));
             }
-            ui.add_space(20.0);
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(24.0);
+            egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
                 let columns = if ui.available_width() >= TWO_COLUMNS_FROM { 2 } else { 1 };
                 for (row, chunk) in APPS.chunks(columns).enumerate() {
+                    if row > 0 {
+                        ui.add_space(CARD_GAP);
+                    }
+                    let detail = (0..chunk.len()).any(|col| self.has_detail(row * columns + col));
                     ui.columns(columns, |cols| {
                         for (col, (ui, app)) in cols.iter_mut().zip(chunk).enumerate() {
-                            self.card(ui, row * columns + col, app);
+                            self.card(ui, row * columns + col, app, detail);
                         }
                     });
-                    ui.add_space(16.0);
                 }
+                // Footer: where downloads come from, and the suite's site.
+                ui.add_space(24.0);
+                ui.separator();
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Every download comes from the app's own release on GitHub and is checked before anything is installed.")
+                            .size(13.0)
+                            .color(muted),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if link(ui, "methodproduction.com") {
+                            self.link("https://methodproduction.com");
+                        }
+                    });
+                });
             });
         });
+    }
+}
+
+/// A small rounded tag (spec §3.1): in the app's accent when there is news, quiet otherwise.
+fn badge(ui: &mut egui::Ui, badge: &Badge, app: &App) {
+    let dark = ui.visuals().dark_mode;
+    let (text, fg, bg) = match badge {
+        Badge::Behind(version) => {
+            let accent = colour(if dark { app.accent.1 } else { app.accent.0 });
+            (format!("{version} available"), accent, accent.gamma_multiply(if dark { 0.22 } else { 0.12 }))
+        }
+        Badge::UpToDate => ("Up to date".to_string(), ui.visuals().weak_text_color(), ui.visuals().extreme_bg_color),
+        Badge::InDevelopment => ("In development".to_string(), ui.visuals().weak_text_color(), ui.visuals().extreme_bg_color),
+    };
+    egui::Frame::new().fill(bg).corner_radius(10.0).inner_margin(egui::Margin::symmetric(9, 3)).show(ui, |ui| {
+        ui.label(egui::RichText::new(text).size(12.5).strong().color(fg));
+    });
+}
+
+/// Text that wraps to at most two lines, ending in "…" if it runs on.
+fn two_lines(ui: &mut egui::Ui, text: &str, size: f32, colour: egui::Color32) {
+    let mut job = egui::text::LayoutJob::single_section(
+        text.to_string(),
+        egui::TextFormat { font_id: egui::FontId::proportional(size), color: colour, ..Default::default() },
+    );
+    job.wrap = egui::text::TextWrapping { max_width: ui.available_width(), max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
+    ui.label(job);
+}
+
+/// A quiet text link: muted, darker on hover, with the pointing hand.
+fn link(ui: &mut egui::Ui, text: &str) -> bool {
+    let muted = ui.visuals().weak_text_color();
+    let response = ui.add(egui::Label::new(egui::RichText::new(text).size(14.0).color(muted)).sense(egui::Sense::click()));
+    let hovered = response.hovered();
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if hovered {
+        let rect = response.rect;
+        let y = rect.bottom() - 1.0;
+        ui.painter().line_segment([egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)], egui::Stroke::new(1.0, muted));
+    }
+    response.clicked()
+}
+
+/// How long ago, in words.
+fn ago(at: std::time::SystemTime) -> String {
+    let minutes = at.elapsed().map(|d| d.as_secs() / 60).unwrap_or(0);
+    match minutes {
+        0 => "just now".to_string(),
+        1 => "a minute ago".to_string(),
+        2..=59 => format!("{minutes} minutes ago"),
+        60..=119 => "an hour ago".to_string(),
+        _ => format!("{} hours ago", minutes / 60),
     }
 }
 

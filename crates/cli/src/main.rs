@@ -41,8 +41,11 @@ fn main() -> ExitCode {
         }
         Some("latest") => {
             for app in APPS.iter().filter(|a| a.released) {
-                match System.latest_version(app) {
-                    Ok(version) => println!("{:<12} {version}", app.slug),
+                match System.latest_release(app) {
+                    Ok(release) => {
+                        let date = release.date.map(launcher_core::release::short_date).unwrap_or_default();
+                        println!("{:<12} {:<8} {date:<12} {}", app.slug, release.version, release.summary.unwrap_or_default());
+                    }
                     Err(e) => println!("{:<12} couldn't check: {e}", app.slug),
                 }
             }
