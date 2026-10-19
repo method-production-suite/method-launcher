@@ -1,10 +1,14 @@
 name: ci
 # Pushes to main, and pull requests: a feature branch with a PR runs once, not twice
 # (the free plan runs few jobs at a time across the whole org; SUITE-STANDARDS.md §6).
+# Weekly, the crate-age and deny checks run again on main, since crates and advisories
+# change without a push.
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "23 6 * * 1"
 # A new push to a pull request cancels its stale run; runs on main always finish.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -13,6 +17,7 @@ permissions:
   contents: read
 jobs:
   gates:
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +33,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev
       - run: cargo xtask ci
   cooldown:
-    # Fails a change that adds crates published less than 14 days ago (scripts/check-crate-ages.py).
+    # Fails on crates published less than 14 days ago (scripts/check-crate-ages.py).
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -39,25 +44,14 @@ jobs:
       - name: Check crate ages
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          # Compare with what the branch had before: main for a pull request, the pushed-over
-          # commit for a push, main for a new branch. With nothing to compare with, every crate
-          # is checked.
-          if [ "$EVENT" = pull_request ]; then
-            base=origin/main
-          elif [ -n "${BEFORE:-}" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            base="$BEFORE"
-          elif [ "$GITHUB_REF" != refs/heads/main ]; then
-            base=origin/main
-          else
-            base=""
-          fi
+          # A pull request checks only what it adds or bumps against main. Every push to main
+          # and the weekly run check the whole lock (SUITE-STANDARDS.md §6).
           # When method-libs comes in (pinned by full commit), add
           # --allow-git https://github.com/method-production-suite/method-libs to both lines.
-          if [ -n "$base" ]; then
-            python3 scripts/check-crate-ages.py --only-changed "$base"
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/check-crate-ages.py --only-changed origin/main
           else
             python3 scripts/check-crate-ages.py
           fi
