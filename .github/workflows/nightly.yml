@@ -1,7 +1,7 @@
 name: nightly
-# Lean CI (SUITE-STANDARDS.md §6): pull requests and pushes to main build on Linux only
-# (ci.yml); this builds and tests main on all four systems once a night, and saves the macOS
-# and Windows caches. A scheduled run skips itself when main hasn't changed since the last
+# Lean CI (SUITE-STANDARDS.md §6): pull requests build on Linux only and pushes to main
+# don't build (ci.yml); this builds and tests main on all four systems once a night, and
+# saves every system's cache, Linux included, for pull requests to restore. A scheduled run skips itself when main hasn't changed since the last
 # green nightly. A manual run always builds: it is how a release commit gets its green
 # nightly when the scheduled one was skipped or red.
 on:
@@ -63,7 +63,7 @@ jobs:
       - name: Linux packages for eframe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev
-      # This runs on main, so it saves the caches; pull requests restore the Linux ones.
+      # The only place caches are saved, on every system; pull requests restore them.
       - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
