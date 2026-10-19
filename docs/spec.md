@@ -416,7 +416,10 @@ technical reason, selectable) and Try Again where retrying could help.
   the order to show, of `{"slug", "name", "tagline", "repo", "bundle_id", "site", "accent":
   ["#light", "#dark"]}` (extra fields are ignored). Every entry must follow the suite's rules
   ("Method <Noun>", slug, `com.method<noun>.desktop`, a `method-` repository under the
-  organisation, an https `.com` site, two `#RRGGBB` accents), or the whole list is refused.
+  organisation, the app's own site `https://method<slug>.com` or the suite's, two `#RRGGBB`
+  accents), or the whole list is refused. The list can't move what is downloaded: an app the
+  launcher knows keeps its built-in repository and bundle id, and a new app's repository
+  must be `method-<slug>`.
   The last good list is kept for the next launch; the built-in list
   (`crates/core/src/catalog.rs`, tested by the same rules) is the fallback. A new list is
   shown only when no install is running. An app the launcher has no mark for draws its

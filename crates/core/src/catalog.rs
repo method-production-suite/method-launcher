@@ -190,7 +190,8 @@ fn leak(text: &str) -> &'static str {
 
 /// Whether an entry follows the suite's rules (SUITE-STANDARDS.md §2): "Method <Noun>", slug
 /// the noun in lower case, bundle id `com.method<noun>.desktop`, a `method-` repository under
-/// [`ORG`], an https site, and two `#RRGGBB` accents. The website's list must pass the same
+/// [`ORG`], the app's own site (`https://method<slug>.com`) or the suite's, and two `#RRGGBB`
+/// accents. The website's list must pass the same
 /// checks as the built-in one, since it names what the launcher downloads.
 pub fn valid(app: &App) -> bool {
     let Some(noun) = app.name.strip_prefix("Method ") else { return false };
@@ -201,7 +202,7 @@ pub fn valid(app: &App) -> bool {
         && app.slug == noun.to_lowercase()
         && app.bundle_id == format!("com.method{}.desktop", app.slug)
         && app.repo.strip_prefix("method-").is_some_and(|r| !r.is_empty() && r.bytes().all(|b| b.is_ascii_lowercase() || b == b'-'))
-        && app.site.strip_prefix("https://").is_some_and(|host| !host.is_empty() && !host.contains(['/', '@', ':', ' ']) && host.ends_with(".com"))
+        && (app.site == format!("https://method{}.com", app.slug) || app.site == "https://methodproduction.com")
         && !app.tagline.is_empty()
         && app.tagline.len() <= 120
         && colour(app.accent.0)
@@ -230,6 +231,16 @@ pub fn parse_remote(json: &str) -> Option<Vec<App>> {
         let (light, dark) = (accent.first()?.as_str()?, accent.get(1)?.as_str()?);
         let slug = text("slug")?;
         let built_in = BUILT_IN.iter().find(|a| a.slug == slug);
+        // What the launcher downloads can't be moved by the list: an app it knows keeps its
+        // repository and bundle id, and a new app's repository is `method-<slug>`.
+        let (repo, bundle_id) = (text("repo")?, text("bundle_id")?);
+        let fixed = match built_in {
+            Some(known) => repo == known.repo && bundle_id == known.bundle_id,
+            None => repo == format!("method-{slug}"),
+        };
+        if !fixed {
+            return None;
+        }
         let app = App {
             slug: leak(slug),
             name: leak(text("name")?),
@@ -282,6 +293,11 @@ mod tests {
     }
 
     #[test]
+    fn the_suites_own_site_is_allowed() {
+        assert!(parse_remote(&REMOTE.replace("https://methodoffice.com", "https://methodproduction.com")).is_some());
+    }
+
+    #[test]
     fn refuses_a_list_with_any_bad_entry() {
         for (from, to) in [
             ("\"repo\":\"method-office\"", "\"repo\":\"someone-else/x\""),
@@ -291,6 +307,14 @@ mod tests {
             ("\"name\":\"Method Office\"", "\"name\":\"Office\""),
             ("#123456", "red"),
             ("\"slug\":\"reader\"", "\"slug\":\"storyteller\""),
+            // A known app can't be pointed at another app's releases or bundle.
+            ("\"repo\":\"method-reader\"", "\"repo\":\"method-budget\""),
+            ("com.methodreader.desktop", "com.methodbudget.desktop"),
+            // A new app's repository is method-<slug>.
+            ("\"repo\":\"method-office\"", "\"repo\":\"method-officesuite\""),
+            // The site is the app's own or the suite's, never a look-alike.
+            ("https://methodoffice.com", "https://methodoffice-download.com"),
+            ("https://methodstoryteller.com", "https://methodstory.com"),
         ] {
             assert_eq!(parse_remote(&REMOTE.replace(from, to)), None, "{to}");
         }
