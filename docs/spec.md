@@ -369,6 +369,13 @@ Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2) wh
 already running (§6). For an installed version older than that rule, the button is hidden. The launcher ships no sample
 files.
 
+**Demo the suite** (the owner, 2026-10-19): a quiet button beside Refresh opens every
+installed app on its Field Station sample at once: Storyteller on the script, Reader on the
+PDF, Schedule on the schedule, Budget on the budget. Each app that isn't running is opened
+with `--open-sample`; one that is running is brought forward with nothing passed, and the
+note says "Budget is open: use Help > Open Sample". Apps that aren't installed are named as
+skipped. It changes no app's settings.
+
 ## 8. Failure cases
 
 Every message is one plain sentence, says what happened and what to do, and has Details (the

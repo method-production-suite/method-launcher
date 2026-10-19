@@ -24,7 +24,7 @@ fn screens() {
         (egui::Theme::Light, "update-light.png", true),
         (egui::Theme::Dark, "update-dark.png", true),
     ];
-    for (theme, name, behind) in shots {
+    for (theme, name, behind) in shots.into_iter().chain([(egui::Theme::Light, "demo-light.png", false)]) {
         let mut harness = Harness::builder()
             .with_size(SIZE)
             .with_pixels_per_point(2.0)
@@ -41,6 +41,11 @@ fn screens() {
         }
         if behind && let Some(crate::state::Found::Installed(budget)) = harness.state_mut().found.get_mut(3) {
             budget.version = "0.2.0".into();
+        }
+        if name.starts_with("demo") {
+            // The note Demo the suite leaves; the button itself is never pressed here, as it
+            // would open the apps on this screen.
+            harness.state_mut().notice = Some((crate::demo_note(&["Reader", "Budget"], &[], &["Storyteller", "Schedule"], &[]), false));
         }
         harness.run_steps(4);
         let image = harness.render().unwrap();

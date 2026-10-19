@@ -339,6 +339,30 @@ impl Launcher {
         });
     }
 
+    /// Opens every installed app on its Field Station sample (the owner, 2026-10-19), with
+    /// `--open-sample` for each app that isn't running (SUITE-STANDARDS.md §2). A running app
+    /// is brought forward and the note says how to open the sample there; apps that aren't
+    /// installed are named as skipped. No app's settings change.
+    fn demo(&mut self) {
+        let (mut opened, mut open_already, mut skipped, mut failed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (app, found) in APPS.iter().zip(&self.found) {
+            let Found::Installed(installed) = found else {
+                skipped.push(short_name(app));
+                continue;
+            };
+            if System.is_running(app, installed) {
+                let _ = System.open_app(app, installed, &[]);
+                open_already.push(short_name(app));
+                continue;
+            }
+            match System.open_app(app, installed, &["--open-sample"]) {
+                Ok(_) => opened.push(short_name(app)),
+                Err(_) => failed.push(short_name(app)),
+            }
+        }
+        self.notice = Some((demo_note(&opened, &open_already, &skipped, &failed), !failed.is_empty()));
+    }
+
     fn link(&mut self, url: &str) {
         if let Err(e) = System.open_url(url) {
             self.notice = Some((format!("The link couldn't be opened. {e}"), true));
@@ -575,9 +599,14 @@ impl eframe::App for Launcher {
                         }
                     }
                     let refresh = egui::Button::new(egui::RichText::new("Refresh").size(15.0)).corner_radius(8.0);
+                    let installed_any = self.found.iter().any(|f| matches!(f, Found::Installed(_)));
                     if ui.add_enabled(!self.scanning && self.checking == 0, refresh).on_hover_text("Look again (⌘R)").clicked() {
                         self.rescan(&ctx);
                         self.check_latest(&ctx);
+                    }
+                    let demo = egui::Button::new(egui::RichText::new("Demo the suite").size(15.0)).corner_radius(8.0);
+                    if ui.add_enabled(installed_any, demo).on_hover_text("Open every installed app on the Field Station sample").clicked() {
+                        self.demo();
                     }
                     let checked = match (self.checking, self.checked) {
                         (0, Some(at)) => format!("Checked {}", ago(at)),
@@ -667,6 +696,39 @@ fn link(ui: &mut egui::Ui, text: &str) -> bool {
     response.clicked()
 }
 
+/// "Method Budget" as "Budget", for notes that name several apps.
+fn short_name(app: &App) -> &'static str {
+    app.name.strip_prefix("Method ").unwrap_or(app.name)
+}
+
+/// "Reader and Budget" or "Reader, Schedule and Budget".
+fn and_list(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The one-line note after Demo the suite.
+fn demo_note(opened: &[&str], open_already: &[&str], skipped: &[&str], failed: &[&str]) -> String {
+    let mut parts = Vec::new();
+    if !opened.is_empty() {
+        parts.push(format!("Opening the Field Station sample in {}.", and_list(opened)));
+    }
+    for name in open_already {
+        parts.push(format!("{name} is open: use Help > Open Sample."));
+    }
+    if !failed.is_empty() {
+        parts.push(format!("{} couldn't be opened.", and_list(failed)));
+    }
+    if !skipped.is_empty() {
+        let verb = if skipped.len() == 1 { "isn't" } else { "aren't" };
+        parts.push(format!("Skipped {}, which {verb} installed.", and_list(skipped)));
+    }
+    parts.join(" ")
+}
+
 /// How long ago, in words.
 fn ago(at: std::time::SystemTime) -> String {
     let minutes = at.elapsed().map(|d| d.as_secs() / 60).unwrap_or(0);
@@ -682,6 +744,22 @@ fn ago(at: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_demo_note_names_every_app() {
+        assert_eq!(
+            demo_note(&["Reader", "Schedule"], &["Budget"], &["Storyteller"], &[]),
+            "Opening the Field Station sample in Reader and Schedule. Budget is open: use Help > Open Sample. Skipped Storyteller, which isn't installed."
+        );
+        assert_eq!(
+            demo_note(&["Storyteller", "Reader", "Schedule", "Budget"], &[], &[], &[]),
+            "Opening the Field Station sample in Storyteller, Reader, Schedule and Budget."
+        );
+        assert_eq!(
+            demo_note(&[], &[], &["Storyteller", "Schedule"], &["Reader"]),
+            "Reader couldn't be opened. Skipped Storyteller and Schedule, which aren't installed."
+        );
+    }
 
     #[test]
     fn colours_parse() {
