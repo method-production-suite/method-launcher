@@ -1,4 +1,4 @@
-# Dependabot version updates for the Rust workspace, grouped into one weekly pull request
+# Dependabot version updates for the Rust workspace, grouped into one monthly pull request
 # (SUITE-STANDARDS.md §6). Security updates are not grouped: each arrives on its own, as
 # soon as an advisory is published. Security alerts are on in the repository settings.
 # GitHub Actions stay out of Dependabot: the suite moves its pinned Action SHAs in every
@@ -11,7 +11,7 @@ updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
