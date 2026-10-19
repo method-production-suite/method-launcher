@@ -1,0 +1,6 @@
+target/
+.DS_Store
+# private notes
+HANDOFF.md
+KICKOFF.md
+docs/KICKOFF.md
