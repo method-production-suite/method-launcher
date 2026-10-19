@@ -83,8 +83,8 @@ fn cargo(args: &[&str]) -> Result<(), String> {
 
 fn ci() -> Result<(), String> {
     cargo(&["fmt", "--all", "--check"])?;
-    cargo(&["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
-    cargo(&["test", "--workspace"])?;
+    cargo(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
+    cargo(&["test", "--locked", "--workspace"])?;
     layers()?;
     println!("ci: all gates passed");
     Ok(())
