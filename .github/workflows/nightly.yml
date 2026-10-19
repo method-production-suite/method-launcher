@@ -1,0 +1,70 @@
+name: nightly
+# Lean CI (SUITE-STANDARDS.md §6): pull requests and pushes to main build on Linux only
+# (ci.yml); this builds and tests main on all four systems once a night, and saves the macOS
+# and Windows caches. A scheduled run skips itself when main hasn't changed since the last
+# green nightly. A manual run always builds: it is how a release commit gets its green
+# nightly when the scheduled one was skipped or red.
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+jobs:
+  changed:
+    # Whether main moved since the last green nightly.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          build=true
+          if [ "$EVENT" = schedule ]; then
+            # A failed lookup fails this job, so a nightly never skips by mistake.
+            last="$(gh api "repos/$REPO/actions/workflows/nightly.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')"
+            if [ "$last" = "$SHA" ]; then
+              build=false
+              echo "main is still $SHA, which already has a green nightly."
+            fi
+          fi
+          echo "build=$build" | tee -a "$GITHUB_OUTPUT"
+  gates:
+    needs: changed
+    if: needs.changed.outputs.build == 'true'
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # The launcher's four systems: Linux x86_64 and arm64, Apple silicon macOS, Windows x64.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Linux packages for eframe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev
+      # This runs on main, so it saves the caches; pull requests restore the Linux ones.
+      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo xtask ci
