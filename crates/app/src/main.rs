@@ -2,6 +2,7 @@
 //! opening and the rest arrive one pull request at a time (docs/ROADMAP.md).
 
 use launcher_core::catalog::{APPS, App};
+use launcher_core::platform::Target;
 
 const APP_NAME: &str = "Method Launcher";
 
@@ -36,7 +37,12 @@ fn card(ui: &mut egui::Ui, app: &App) {
             ui.vertical(|ui| {
                 ui.heading(app.name);
                 ui.label(app.tagline);
-                ui.weak(if app.download.is_some() { "Not installed" } else { "In development. No download yet." });
+                let buildable = Target::current().is_some_and(|t| !t.kinds().is_empty());
+                ui.weak(match (app.released, buildable) {
+                    (false, _) => "In development. No download yet.".to_string(),
+                    (true, false) => format!("There's no {} for this system yet. You can build it from source.", app.name),
+                    (true, true) => "Not installed".to_string(),
+                });
             });
         });
     });

@@ -1,5 +1,8 @@
-//! The suite's apps, built into the launcher (docs/spec.md §9). Kept in step with the
+//! The suite's apps, built into the launcher (docs/spec.md §9). Installer names come from each
+//! app's noun per system (`platform::Kind`). Kept in step with the
 //! website's `apps.toml` by hand; the tests below check every entry's shape.
+
+use crate::platform::Kind;
 
 /// GitHub organisation every app's repository lives in.
 pub const ORG: &str = "method-production-suite";
@@ -17,9 +20,8 @@ pub struct App {
     pub repo: &'static str,
     /// The app's macOS bundle identifier.
     pub bundle_id: &'static str,
-    /// Version-free installer name on the latest release, or `None` while there is no
-    /// download yet.
-    pub download: Option<&'static str>,
+    /// Whether the app has a published release to install from yet.
+    pub released: bool,
     /// The app's site.
     pub site: &'static str,
     /// Accent for light and dark appearance, as `#RRGGBB`.
@@ -27,9 +29,24 @@ pub struct App {
 }
 
 impl App {
-    /// The installer's URL on the latest release, fixed by the catalog (spec §4.1).
-    pub fn download_url(&self) -> Option<String> {
-        self.download.map(|file| format!("https://github.com/{ORG}/{}/releases/latest/download/{file}", self.repo))
+    /// The noun in "Method <Noun>": `Budget`.
+    pub fn noun(&self) -> &'static str {
+        self.name.strip_prefix("Method ").unwrap_or(self.name)
+    }
+
+    /// The installer's file name for this kind, or `None` while there is no release yet.
+    pub fn installer(&self, kind: Kind) -> Option<String> {
+        self.released.then(|| kind.file_name(self.noun()))
+    }
+
+    /// The URL of the latest release, which redirects to its tag (spec §4.1 step 1).
+    pub fn latest_url(&self) -> String {
+        format!("https://github.com/{ORG}/{}/releases/latest", self.repo)
+    }
+
+    /// A file on a pinned release: `.../releases/download/v0.4.0/SHA256SUMS`.
+    pub fn asset_url(&self, tag: &str, file: &str) -> String {
+        format!("https://github.com/{ORG}/{}/releases/download/{tag}/{file}", self.repo)
     }
 
     /// The latest release's update manifest (SUITE-STANDARDS.md §1).
@@ -51,7 +68,7 @@ pub const APPS: [App; 4] = [
         tagline: "Screenwriting that formats itself.",
         repo: "method-storyteller",
         bundle_id: "com.methodstoryteller.desktop",
-        download: None,
+        released: false,
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
     },
@@ -61,7 +78,7 @@ pub const APPS: [App; 4] = [
         tagline: "Screenplay PDFs into e-books and editable scripts.",
         repo: "method-reader",
         bundle_id: "com.methodreader.desktop",
-        download: Some("Method-Reader-macOS.dmg"),
+        released: true,
         site: "https://methodreader.com",
         accent: ("#7052BA", "#B49CF0"),
     },
@@ -71,7 +88,7 @@ pub const APPS: [App; 4] = [
         tagline: "Film and TV scheduling, from script to stripboard.",
         repo: "method-scheduling",
         bundle_id: "com.methodschedule.desktop",
-        download: Some("Method-Schedule-macOS.dmg"),
+        released: true,
         site: "https://methodschedule.com",
         accent: ("#2F5FB3", "#7AA2F0"),
     },
@@ -81,7 +98,7 @@ pub const APPS: [App; 4] = [
         tagline: "Film and TV budgeting that shows its working.",
         repo: "method-budget",
         bundle_id: "com.methodbudget.desktop",
-        download: Some("Method-Budget-macOS.dmg"),
+        released: true,
         site: "https://methodbudget.com",
         accent: ("#0E7468", "#2CC7B2"),
     },
@@ -101,15 +118,11 @@ pub fn by_bundle_id(id: &str) -> Option<&'static App> {
 mod tests {
     use super::*;
 
-    fn noun(app: &App) -> &str {
-        app.name.strip_prefix("Method ").unwrap_or("")
-    }
-
     #[test]
     fn names_follow_the_suite_pattern() {
         for app in &APPS {
-            let noun = noun(app);
-            assert!(!noun.is_empty() && !noun.contains(' '), "{}: not \"Method <Noun>\"", app.name);
+            let noun = app.noun();
+            assert!(app.name.starts_with("Method ") && !noun.contains(' '), "{}: not \"Method <Noun>\"", app.name);
             assert_eq!(app.slug, noun.to_lowercase());
             assert_eq!(app.bundle_id, format!("com.method{}.desktop", noun.to_lowercase()));
             assert!(app.site.starts_with("https://method"), "{}: site is not https", app.slug);
@@ -117,25 +130,23 @@ mod tests {
     }
 
     #[test]
-    fn downloads_are_version_free() {
-        for app in &APPS {
-            if let Some(file) = app.download {
-                assert_eq!(file, format!("Method-{}-macOS.dmg", noun(app)));
-            }
-        }
+    fn installers_only_once_released() {
+        let budget = by_slug("budget").unwrap();
+        assert_eq!(budget.installer(Kind::SetupExe).as_deref(), Some("Method-Budget-windows-x64-setup.exe"));
+        assert_eq!(by_slug("storyteller").unwrap().installer(Kind::Dmg), None);
     }
 
     #[test]
     fn urls_point_at_the_suite_on_github() {
         let budget = by_slug("budget").unwrap();
+        assert_eq!(budget.latest_url(), "https://github.com/method-production-suite/method-budget/releases/latest");
         assert_eq!(
-            budget.download_url().as_deref(),
-            Some("https://github.com/method-production-suite/method-budget/releases/latest/download/Method-Budget-macOS.dmg")
+            budget.asset_url("v0.4.0", "SHA256SUMS"),
+            "https://github.com/method-production-suite/method-budget/releases/download/v0.4.0/SHA256SUMS"
         );
         assert_eq!(budget.manifest_url(), "https://github.com/method-production-suite/method-budget/releases/latest/download/latest.json");
-        assert_eq!(by_slug("storyteller").unwrap().download_url(), None);
         for app in &APPS {
-            assert!(crate::net::is_allowed(&app.manifest_url()));
+            assert!(crate::net::is_allowed(&app.manifest_url()) && crate::net::is_allowed(&app.latest_url()));
         }
     }
 

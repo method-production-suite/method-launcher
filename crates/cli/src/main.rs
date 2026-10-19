@@ -3,6 +3,7 @@
 //! (docs/ROADMAP.md).
 
 use launcher_core::catalog::APPS;
+use launcher_core::platform::Target;
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: method-launcher <list|--version|--help>";
@@ -15,8 +16,16 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("list") => {
+            let target = Target::current();
             for app in &APPS {
-                let download = app.download.unwrap_or("no download yet");
+                let installers: Vec<String> = target.map(|t| t.kinds().iter().filter_map(|&k| app.installer(k)).collect()).unwrap_or_default();
+                let download = if !app.released {
+                    "no release yet".to_string()
+                } else if installers.is_empty() {
+                    "no build for this system yet".to_string()
+                } else {
+                    installers.join(", ")
+                };
                 println!("{:<12} {:<20} {:<32} {}", app.slug, app.name, app.bundle_id, download);
             }
             ExitCode::SUCCESS

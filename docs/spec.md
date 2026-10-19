@@ -1,9 +1,9 @@
 # Method Launcher: specification
 
-Method Launcher (working name) is one small Mac app that is the front door to the Method
-Production Suite. It shows the suite's apps, installs the ones you want, tells you when an
-update is ready, opens them, and opens your recent files in the right app. One download
-instead of four.
+Method Launcher (working name) is one small app, on macOS, Windows and Linux, that is the
+front door to the Method Production Suite. It shows the suite's apps, installs the ones you
+want, tells you when an update is ready, opens them, and opens your recent files in the right
+app. One download instead of four, on whichever system you use.
 
 Status: draft for the first version. The product name and accent are open
 ([ROADMAP.md](ROADMAP.md), "Waiting on the owner"); everything here says "Method Launcher"
@@ -11,45 +11,67 @@ until then.
 
 ## 1. Scope
 
-**In the first version**
+**Systems**
 
-- macOS on Apple silicon only (SUITE-STANDARDS.md §3).
-- The four apps, in the order of a production: Method Storyteller, Method Reader, Method
-  Schedule, Method Budget.
-- Install, open, update notice, recent files, samples, Help.
-- Its own updates, through the suite's updater (`method-update` from `method-libs`).
+| System | Launcher builds | Apps it can install |
+|---|---|---|
+| macOS, Apple silicon | yes | yes, the `.dmg` |
+| Windows x64 | yes | yes, the setup `.exe` |
+| Linux x86_64 | yes | yes, the `.AppImage` (or the `.deb`, §4.4) |
+| Linux arm64 | yes, if the CI runner stays free (ROADMAP.md) | not yet: the suite publishes no arm64 app builds, so each card says so and links the app's build-from-source steps |
+| Intel Mac, Windows on ARM, 32-bit | no | no |
+
+The screens are the same everywhere. What differs per system (where apps live, how they are
+installed, verified and launched, where their recent-file lists are) sits behind one small
+trait per concern (§10), so each system is one implementation and the window never asks which
+system it is on.
+
+**In the first version**: the four apps, in the order of a production (Method Storyteller,
+Method Reader, Method Schedule, Method Budget); install, open, update notice, recent files,
+samples, Help; the launcher's own updates (§5.2).
 
 **Not in the first version**
 
-- Windows and Linux.
-- Uninstalling apps. The launcher can show an app in the Finder; moving it to the Bin is
-  left to the person.
-- Installing a specific older version, or a pre-release.
-- News from the apps, unless the suite publishes a simple public feed (open question, §10).
+- Uninstalling apps. The launcher can show an app's location; removing it is left to the
+  person and the system's own tools.
+- Installing an older version or a pre-release.
+- News from the apps, unless the suite publishes a simple public feed (§11).
 
 **Never**
 
 - No server of our own, no accounts, no sign-in, no telemetry, no analytics, no crash
   reporting that sends anything on its own.
 - Never runs, opens or copies anything it downloaded before that download has passed every
-  check in §4.
-- Never updates an app itself: each app updates itself (§5), so there is one update path per
-  app.
+  check for its system (§4).
+- Never updates an installed app itself: each app updates itself (§5.1), so there is one
+  update path per app.
 - Never reads, moves or changes a person's documents. It reads only the apps' own recent-file
   lists (§6) and hands a file to its app to open.
-- Never asks for an administrator password unless /Applications is not writable, and then
-  only for the one copy (§4.5).
+- Never asks for administrator rights unless the chosen install needs them (§4), and says why
+  first.
 - No generative AI.
 
 ## 2. Words used here
 
-- **Catalog**: the list of apps the launcher knows about: name, slug, one-line description,
-  status, repository, bundle id, download name, accent. Built into the launcher (§9).
-- **Installed**: an app bundle with the catalog's bundle id found in `/Applications` or
-  `~/Applications`.
+- **Catalog**: the apps the launcher knows about: name, slug, one line, repository, bundle
+  id, whether it has a release yet, accent. Built into the launcher (§9).
+- **Target**: the system the launcher runs on: `macos-arm64`, `windows-x64`, `linux-x86_64`,
+  `linux-arm64`.
+- **Installer**: the release asset for a target, by its version-free name
+  (SUITE-STANDARDS.md §3):
+
+  | Target | Installer |
+  |---|---|
+  | macos-arm64 | `Method-<Noun>-macOS.dmg` |
+  | windows-x64 | `Method-<Noun>-windows-x64-setup.exe` |
+  | linux-x86_64 | `Method-<Noun>-linux-x86_64.AppImage`, or `Method-<Noun>-linux-amd64.deb` |
+  | linux-arm64 | none yet |
+
 - **Release**: the app's latest published GitHub release. Draft releases are never seen.
+- **Checksums**: the release's `SHA256SUMS` file, in the usual `<hex>  <file name>` lines
+  (§4.1).
 - **Manifest**: the release's `latest.json` (SUITE-STANDARDS.md §1), read with
-  `method-update`'s manifest parser.
+  `method-update`'s parser. The launcher uses its `version` on every system.
 
 ## 3. Screens and states
 
@@ -58,187 +80,243 @@ dark follow the system.
 
 ### 3.1 The apps
 
-The main view. One card per catalog app, in catalog order, in a single column at narrow
-widths and two columns at wider ones. Each card shows the app's mark in its accent, its
-name, its one line, its status from the catalog (for example "Alpha, ready for testing"),
-and one main button whose label follows the app's state:
+The main view. One card per catalog app, in catalog order, one column at narrow widths and two
+at wider ones. Each card shows the app's mark in its accent, its name, its one line, its
+status from the catalog (for example "Alpha, ready for testing"), and one main button whose
+label follows the app's state:
 
 | State | What the card says | Main button | Other actions |
 |---|---|---|---|
 | No release yet | "In development. No download yet." | Visit the site | |
+| No build for this system | "There's no Method Budget for Linux on ARM yet. You can build it from source." | Build from source (opens the steps) | Visit the site |
 | Not installed | the release's version, "Not installed" | Install | Release notes |
 | Downloading | progress bar, bytes of total | Cancel | |
 | Checking | "Checking the download" | (none) | |
-| Copying | "Copying to Applications" | (none) | |
-| Installed, current | "Version 0.4.0" | Open | Show in Finder, Release notes, Open Sample |
-| Installed, update ready | "Version 0.4.0. Version 0.5.0 is ready." | Open to update | Open, Release notes, Show in Finder |
+| Installing | "Copying to Applications" (macOS), "The installer is open" (Windows), "Installing" (Linux) | (none) | |
+| Installed, current | "Version 0.4.0" | Open | Show location, Release notes, Open Sample |
+| Installed, update ready | "Version 0.4.0. Version 0.5.0 is ready." | Open to update | Open, Release notes, Show location |
 | Installed, check failed | "Version 0.4.0" and a quiet "Couldn't check for updates" | Open | Try again |
 | Install failed | one sentence saying what went wrong (§8) | Try again | Details |
-| Running | a small "Open" dot beside the version | Open (brings it forward) | as above |
 
-Only one install runs at a time; other Install buttons wait in a queue and say "Waiting".
+"Show location" is Show in Finder on macOS, Show in Explorer on Windows, Show in Files on
+Linux. Only one install runs at a time; other Install buttons wait and say "Waiting".
 
 ### 3.2 Recent files
 
-Below the cards, or as a second tab at narrow widths: the most recent files across the
-suite, newest first, up to 20. Each row: the file's name, the app's mark, the folder it is
-in (shortened from the home folder, `~/Films/Field Station`), and when it was last opened.
-A file whose app is not installed shows "Install Method Schedule to open this" with the
-Install button. A file that no longer exists is not shown. Double-click or Return opens it
-in its app (§6). Right-click: Show in Finder, Open with its app, Remove from this list
-(hides it in the launcher only; the app's own list is never changed).
+Below the cards, or as a second tab at narrow widths: the most recent files across the suite,
+newest first, up to 20. Each row: the file's name, the app's mark, the folder it is in
+(shortened from the home folder, `~/Films/Field Station`), and when it was last opened. A
+file whose app is not installed shows "Install Method Schedule to open this" with the Install
+button. A file that no longer exists is not shown. Double-click or Enter opens it in its app
+(§6). Context menu: Show location, Open with its app, Remove from this list (hides it in the
+launcher only; the app's own list is never changed).
 
 Empty state: "Files you open in the Method apps show up here."
 
 ### 3.3 First launch
 
-The first time, the window opens on the apps with one quiet line above them: "Install the
-apps you want. Each one updates itself." Nothing installs on its own. A person who installs
-nothing can still close the launcher and come back.
+The window opens on the apps with one quiet line above them: "Install the apps you want.
+Each one updates itself." Nothing installs on its own.
 
 ### 3.4 Settings
 
-A small window (Method Launcher > Settings): "Check for updates automatically" (on by
-default, SUITE-STANDARDS.md §1); "Open the launcher at login" (off by default); "Install
-apps in: /Applications or my Applications folder" (the second is `~/Applications`, for a
-person without administrator rights).
+Method Launcher > Settings on macOS; File > Settings on Windows and Linux.
+
+- "Check for updates automatically" (on by default, SUITE-STANDARDS.md §1).
+- "Open the launcher when I log in" (off by default).
+- macOS: "Install apps in: Applications / my Applications folder" (`/Applications` or
+  `~/Applications`).
+- Linux on a system with apt: "Install apps as: AppImage in my Applications folder / system
+  package (.deb)" (AppImage by default, §4.4).
 
 ### 3.5 Menus
 
-- **Method Launcher**: About Method Launcher, Settings, Check for Updates..., Quit.
-- **File**: Open Recent (the same list as §3.2), Close Window.
+The macOS menu bar, or the window's own menu bar on Windows and Linux.
+
+- **Method Launcher** (macOS only): About, Settings, Check for Updates..., Quit.
+- **File**: Open Recent (the same list as §3.2); on Windows and Linux also Settings and
+  Quit (Exit on Windows).
 - **Help** (SUITE-STANDARDS.md §4): User Guide, Keyboard Shortcuts, What's New, Check for
-  Updates..., Report a Bug, Licenses and Notices, methodproduction.com.
+  Updates..., Report a Bug, Licenses and Notices, methodproduction.com; on Windows and Linux
+  also About.
 
 ## 4. Install and verify
 
-Every step below runs off the interface thread; the card shows where it is. Any failure
-stops the install, removes everything it made, and shows one plain sentence (§8).
+Every step runs off the interface thread; the card shows where it is. Any failure stops the
+install, removes everything it made, and shows one plain sentence (§8).
 
-### 4.1 Find the download
+### 4.1 Steps common to every system
 
-The download URL is fixed by the catalog, never read from a manifest or a page:
+1. **Pin the release.** Request `https://github.com/method-production-suite/<repo>/releases/latest`
+   without following the redirect; its `Location` names the tag (`.../releases/tag/v0.4.0`).
+   Every later download for this install uses that tag
+   (`.../releases/download/v0.4.0/<file>`), so the checksums and the installer always come
+   from the same release, even if a new one is published mid-install. The tag must parse as a
+   version.
+2. **Fetch the checksums** (Windows and Linux; on macOS too where the release has them, as
+   a second check): `SHA256SUMS` from that release. A release whose checksum file is
+   missing, or has no line for the installer, cannot be installed on Windows or Linux: the
+   card says "This release can't be checked yet, so it can't be installed from here" and
+   offers the release page. Until every app publishes the one name, the launcher also reads
+   `SHA256SUMS-app` (Method Reader's current name for its installers' checksums).
+3. **Download** the installer.
+   - https only. Requests start at `github.com`; redirects are followed only to GitHub's
+     release-asset hosts (an allow-list in code, the same list `method-update` uses), and only
+     over https. Any other redirect fails the install.
+   - Into the launcher's cache folder (`~/Library/Caches/<bundle id>/downloads`,
+     `%LOCALAPPDATA%\<bundle id>\cache\downloads`, `$XDG_CACHE_HOME/<bundle id>/downloads`),
+     owner-only, as `<slug>-<random>.partial`, renamed when complete.
+   - At most 1 GiB. A stall of 60 seconds fails with "The download stopped". Cancel removes
+     the file.
+4. **Hash** the file while it downloads (SHA-256) and compare with the checksum line when
+   there is one. A mismatch deletes the file.
+5. Then the system's own steps below.
 
-```
-https://github.com/method-production-suite/<repo>/releases/latest/download/<download>
-```
+What a checksum proves: that the file is the one the release lists, unchanged on the way.
+Both files come from the same release, so it doesn't prove who made the release; a signature
+does that (Developer ID on macOS today, Authenticode on Windows once the suite signs Windows
+builds). Signing `SHA256SUMS` with the suite's updater keys would close that gap on Linux
+(ROADMAP.md, cross-app items).
 
-For example `.../method-budget/releases/latest/download/Method-Budget-macOS.dmg`
-(SUITE-STANDARDS.md §3, version-free names). The release's version for the card comes from
-the same release's `latest.json`.
+### 4.2 macOS: the .dmg
 
-### 4.2 Download
+1. **Mount read-only**:
+   `hdiutil attach -readonly -nobrowse -noautoopen -mountrandom <cache dir> <file.dmg>`, with
+   the mount point read from `hdiutil`'s plist output. Always detached afterwards, on success
+   and on failure. The image must hold exactly one `.app` at its top level, named as the
+   catalog says (`Method Budget.app`).
+2. **Verify, before anything is copied.** All must pass, using tools that ship with macOS,
+   called by full path, or Rust code in the launcher:
+   - **The right app**: `Info.plist` has the catalog's bundle id and a version that parses.
+   - **Signed by the suite**: `codesign --verify --deep --strict` with the requirement
+     ```
+     anchor apple generic
+       and certificate leaf[subject.OU] = "XSRB3D643J"
+       and certificate 1[field.1.2.840.113635.100.6.2.6]
+       and certificate leaf[field.1.2.840.113635.100.6.1.13]
+     ```
+     that is, an Apple-rooted Developer ID Application certificate for team XSRB3D643J and
+     no other. The team id is a constant in code with a test that pins it.
+   - **Notarised**: `spctl --assess --type execute -vv` accepts it as a notarised Developer
+     ID app (the ticket is stapled, so this works offline too).
+   - **Apple silicon**: every Mach-O file in the bundle is thin arm64 or fat with arm64
+     slices alone, read by the launcher in Rust (the same rule the release workflows
+     enforce).
+   - **No escaping links**: no symbolic link in the bundle points outside it.
+3. **Copy**: to `/Applications/<Name>.app` (or `~/Applications`, per Settings). An app with
+   the same bundle id already there means it is installed (an update is §5); a different
+   bundle at that path stops the install. `ditto` to a hidden staging name beside the
+   destination, check the copy's signature again, then rename into place (atomic on one
+   volume). If the folder isn't writable, the system's own administrator prompt for that copy
+   and rename alone, after saying why: "Applications is protected on this Mac. macOS will ask
+   for an administrator's password to copy Method Budget there." Cancel offers
+   `~/Applications`.
+4. No quarantine flag is added: the launcher has made Gatekeeper's notarisation check itself.
 
-- https only. The request starts at `github.com`; redirects are followed only to GitHub's
-  release-asset hosts (an allow-list in code, the same list `method-update` uses), and only
-  over https. Any other redirect fails the install.
-- Written to `~/Library/Caches/<launcher bundle id>/downloads/<slug>-<random>.dmg.partial`,
-  owner-only, renamed without `.partial` when complete.
-- Limits: 1 GiB at most; the download fails if the length header or the bytes go over it.
-  Stalls longer than 60 seconds fail with "The download stopped". Cancel removes the file.
-- Nothing downloaded is ever opened by Finder, LaunchServices or Gatekeeper's quarantine
-  flow before the checks below. The disk image is mounted only to be read.
+### 4.3 Windows: the setup .exe
 
-### 4.3 Mount read-only
+1. **Verify**: the SHA-256 matches the checksum line (§4.1). Once the suite signs Windows
+   builds, also the Authenticode signature (`WinVerifyTrust`) with the suite's publisher
+   name, pinned in code; until then the card's Details says "Checked against the release's
+   checksums. Windows builds are not signed yet."
+2. **Run the installer** as the signed-in person, with its own window, and wait for it to
+   finish. The launcher passes nothing that changes where or how it installs. Windows'
+   SmartScreen may warn about an unsigned installer; the card says so beforehand: "Windows
+   may say it doesn't recognise this app. Choose More info, then Run anyway." (until the
+   builds are signed).
+3. **Confirm**: re-read the installed apps (§4.6). If the app isn't there after the installer
+   exits, the card says "The installer closed before Method Budget was installed."
 
-```
-hdiutil attach -readonly -nobrowse -noautoopen -mountrandom <cache dir> <file.dmg>
-```
+### 4.4 Linux: the AppImage, or the .deb
 
-The launcher reads the mount point from `hdiutil`'s plist output, never guesses it. Always
-detached afterwards (`hdiutil detach`), on success and on failure. The image must hold
-exactly one `.app` bundle at its top level, named as the catalog says
-(`Method Budget.app`); anything else fails ("The download isn't what we expected").
+**AppImage (the default, no administrator needed)**
 
-### 4.4 Verify the app, before anything is copied
+1. **Verify**: the SHA-256 matches the checksum line (§4.1).
+2. **Place it**: `~/Applications/Method-Budget.AppImage` (the folder made if needed), copied
+   to a hidden staging name, made executable (0755), then renamed into place.
+3. **Desktop entry**: `~/.local/share/applications/method-budget.desktop` with the app's
+   name, one line, `Exec="<path>" %F`, and the app's mark as its icon (the launcher ships the
+   marks, so nothing in the AppImage is run to get one), then `update-desktop-database` on
+   that folder if it exists. The launcher records what it installed (app, version, path) in
+   its own `installed.json`.
+4. AppImages need FUSE on some systems. If the AppImage fails to start for that reason, the
+   card links the suite's help page on it rather than trying to install system packages.
 
-All of these must pass. Each uses tools that ship with macOS (`/usr/bin/codesign`,
-`/usr/sbin/spctl`), called by full path, or Rust code in the launcher.
+**.deb (a Settings choice on systems with apt)**
 
-1. **The right app.** The bundle's `Info.plist` has the catalog's bundle id
-   (`com.methodbudget.desktop`) and a version that parses as semver. The version is shown on
-   the card after install.
-2. **Signed by the suite's Developer ID.** `codesign --verify --deep --strict` passes, and
-   the signature satisfies this requirement:
-   ```
-   anchor apple generic
-     and certificate leaf[subject.OU] = "XSRB3D643J"
-     and certificate 1[field.1.2.840.113635.100.6.2.6]
-     and certificate leaf[field.1.2.840.113635.100.6.1.13]
-   ```
-   That is: an Apple-rooted Developer ID Application certificate for team XSRB3D643J, and no
-   other. The team id is a constant in the launcher's code with a test that pins it.
-3. **Notarised.** `spctl --assess --type execute -vv` accepts the bundle and reports the
-   source as a notarised Developer ID. The ticket is stapled by every suite release
-   (RELEASE-CHECKLIST.md), so this works offline too.
-4. **Apple silicon.** Every Mach-O file in the bundle (the main executable, helpers,
-   frameworks and dylibs) is a thin arm64 file, or a fat file whose only slice is arm64.
-   The launcher reads the Mach-O headers itself, in Rust, the same rule the release workflows
-   enforce (SUITE-STANDARDS.md §3), so it doesn't depend on developer tools being installed.
-5. **No surprises.** No symbolic link in the bundle points outside it.
+1. **Verify**: the SHA-256 matches.
+2. **Install**: `pkexec apt-get install -y <file.deb>` (apt resolves its dependencies), after
+   saying why: "Installing a system package needs an administrator's password." Cancel leaves
+   nothing installed.
+3. **Confirm**: `dpkg-query` shows the package and its version (§4.6).
 
-If any check fails the image is detached, the download deleted, and nothing is copied.
+**Linux on ARM**: no install button. "There's no Method Budget for Linux on ARM yet. You can
+build it from source." linking the app's README build steps.
 
-### 4.5 Copy into Applications
+### 4.5 After any install
 
-1. Destination: `/Applications/<Name>.app`, or `~/Applications/<Name>.app` per Settings.
-2. If an app with the same bundle id is already there, the launcher does not install over it
-   (that is an update, §5). A different bundle at that path (another app with the same name)
-   stops the install: "Something else called Method Budget.app is already in Applications."
-3. Copy with `/usr/bin/ditto` from the mounted image to a hidden staging name beside the
-   destination (`.Method Budget.app.installing-<random>`), check the copy's signature again
-   (§4.4 step 2, on the copy), then rename it into place. A rename on the same volume is
-   atomic, so there is never a half-copied app at the real name.
-4. If the destination folder isn't writable, the launcher asks once for an administrator,
-   through the system's own password prompt, for that one copy and rename (the same approach
-   as `method-update`'s admin swap), and says why first: "Applications is protected on this
-   Mac. macOS will ask for an administrator's password to copy Method Budget there." If the
-   person cancels, the launcher offers `~/Applications` instead.
-5. Detach the image and delete the download. The card turns to "Installed, current" and the
-   main button to Open.
+The cache file is deleted, the card turns to "Installed, current" with Open as its main
+button. A failure cleans up the same way; at next launch the launcher removes any leftover
+partial downloads, staging copies and mounts of its own.
 
-The launcher does not add a quarantine flag to the installed copy: it has made the same
-notarisation check Gatekeeper would make on first launch (§4.4 step 3).
+### 4.6 What counts as installed
+
+| System | Where the launcher looks | Version from |
+|---|---|---|
+| macOS | `/Applications` and `~/Applications`, bundles with the catalog's bundle id | `CFBundleShortVersionString` |
+| Windows | the per-user and per-machine uninstall entries in the registry, matched by display name | `DisplayVersion`; the executable from `InstallLocation` |
+| Linux, AppImage | the launcher's `installed.json`, then the files it names | the version recorded at install (an AppImage updated by its app records its own; cross-app item) |
+| Linux, .deb | `dpkg-query -W` for the app's package name | the package version |
+
+An app installed by hand (dragged in, or installed from the website) is found the same way
+and shown as installed.
 
 ## 5. Updates
 
 ### 5.1 The suite's apps: detect only
 
-- For each installed app, read `CFBundleShortVersionString` from its bundle and its
-  release's manifest (`releases/latest/download/latest.json`), parsed with `method-update`.
-  When the manifest's version is newer (semver), the card says "Version X is ready."
-- **Open to update** opens the app. Each app's own updater (method-update, or the Tauri
-  updater for Budget and Schedule) then shows its own "Update ready, restart to update". The
-  launcher never downloads an update archive, never replaces an installed app, never touches
-  another app's settings.
-- To make that immediate, the launcher asks each app to accept one launch argument meaning
-  "check for updates now" (a cross-app item, ROADMAP.md). Until an app supports it, the
-  launcher opens the app and its card says "Choose Help > Check for Updates in Method
-  Budget."
+- For each installed app, compare its installed version (§4.6) with the release manifest's
+  `version` (`releases/latest/download/latest.json`). Newer (semver) shows "Version X is
+  ready."
+- **On macOS**, Open to update opens the app; its own updater (method-update, or the
+  manifest's updater in Method Budget and Method Schedule) shows "Update ready, restart to
+  update". The launcher never downloads an update archive or replaces an installed app.
+- **On Windows and Linux**, where the apps don't update themselves yet, the card offers
+  **Get version X**: the same download, verify and install path as §4 (the Windows installer
+  upgrades in place; the AppImage is replaced through its staging name; the .deb through
+  apt). When an app gains its own updater on that system, the launcher goes back to detect
+  only for it.
+- To make the macOS path immediate, each app accepts a launch argument meaning "check for
+  updates now" (cross-app item). Until an app supports it, its card says "Choose Help >
+  Check for Updates in Method Budget."
 - Timing follows SUITE-STANDARDS.md §1: 2 minutes after launch, then every 6 hours while
   open, and when the window comes forward if the last check is more than an hour old. The
-  Settings switch turns all of it off; Check for Updates... still works by hand.
-- An app with no `latest.json` (no signed updater yet) shows the installed version only.
+  Settings switch turns this off; Check for Updates... still works by hand.
 
 ### 5.2 The launcher itself
 
-The launcher updates itself the way Method Storyteller does: `method-update` pinned by full
-commit, its own minisign key (1Password, "Method Launcher - Update signing key"), the
-standard schedule and switch, Help > Check for Updates..., and What's New once after an
-update.
+- **macOS**: `method-update`, pinned by full commit, with its own minisign key (1Password,
+  "Method Launcher - Update signing key"), the standard schedule and switch, Check for
+  Updates..., and What's New once after an update.
+- **Windows and Linux**: `method-update` is macOS-only today, so the launcher checks its own
+  manifest on the same schedule and offers the new version as a download: "Version X of
+  Method Launcher is ready" with Download, which opens the release page in the browser. When
+  the suite's updater covers these systems, the launcher moves to it.
 
 ## 6. Open and recent files
 
-- **Open an app**: `/usr/bin/open -b <bundle id>`. Nothing else is passed.
-- **Recent files**: each app keeps `recent.json` in its data folder
-  (`~/Library/Application Support/<bundle id>/recent.json`, SUITE-STANDARDS.md §2). The
-  launcher reads those files and nothing else. It reads them only; a missing, unreadable or
-  unknown-shape file is skipped for that app, silently. The shared shape is a cross-app item
-  (ROADMAP.md); the launcher accepts a list of entries each with an absolute `path` and an
-  optional RFC 3339 `opened` time.
-- **Open a recent file**: `/usr/bin/open -b <bundle id> <path>`, so the file opens in the app
-  that listed it, whatever the system's default for that extension is. A path that no longer
-  exists is dropped from the view, not opened.
+- **Open an app**: macOS `open -b <bundle id>`; Windows, the app's executable from §4.6;
+  Linux, the AppImage path, or the `.deb`'s desktop entry `Exec` line. Nothing else is
+  passed.
+- **Recent files**: each app keeps `recent.json` in its data folder named by its bundle id
+  (SUITE-STANDARDS.md §2): `~/Library/Application Support/<id>/` on macOS,
+  `%APPDATA%\<id>\` on Windows, `$XDG_DATA_HOME/<id>/` (default `~/.local/share/<id>/`) on
+  Linux. The launcher reads those files only; a missing, unreadable or unknown-shape file is
+  skipped for that app. The shared shape is a cross-app item; the launcher accepts a list of
+  entries each with an absolute `path` and an optional RFC 3339 `opened` time.
+- **Open a recent file**: the same launch as above with the file's path as the one argument
+  (macOS `open -b <id> <path>`), so it opens in the app that listed it, whatever the system's
+  default for that extension is.
 - The launcher watches nothing in the background: it reads the lists when its window comes
   forward.
 
@@ -246,67 +324,95 @@ update.
 
 Each installed app's card has Open Sample: it opens the app with its Field Station sample
 (SUITE-STANDARDS.md §8), as a fresh untitled copy, exactly as the app's own Help > Open
-Sample does. The launcher ships no sample files of its own; it asks the app, by the same
-kind of launch argument as §5.1 ("open the sample"). Until an app supports it, the button is
-hidden for that app.
+Sample does, through a launch argument the app accepts (cross-app item). Until an app
+supports it, the button is hidden for that app. The launcher ships no sample files.
 
 ## 8. Failure cases
 
-Every message is one plain sentence, says what happened and what to do, and has Details
-(the technical reason, selectable) and Try Again where retrying could help.
+Every message is one plain sentence, says what happened and what to do, and has Details (the
+technical reason, selectable) and Try Again where retrying could help.
 
 | What happened | What the person sees |
 |---|---|
 | No network | "You're offline. Connect to the internet and try again." |
 | GitHub unreachable, 5xx, timeout | "GitHub didn't answer. Try again in a few minutes." |
-| 404 for the download | "Method Budget has no download yet." (catalog and release disagree) |
+| No installer for this system on the release | "This release of Method Budget has no download for Windows." |
+| No checksum file, or no line for the installer (Windows, Linux) | "This release can't be checked yet, so it can't be installed from here." with the release page |
+| Checksum mismatch | "The download doesn't match the release's checksum, so it was deleted. Try again." |
 | Redirect to a host not on the list | "The download came from somewhere unexpected, so it was stopped." |
 | Too big, or the download stalls | "The download stopped. Try again." |
 | Not enough disk space | "There isn't enough free space to install Method Budget (it needs 210 MB)." |
-| The image won't mount | "The download is damaged. Try again." |
-| Not exactly one app, wrong name or bundle id | "The download isn't what we expected, so nothing was installed." |
-| Signature, team, notarisation or architecture check fails | "This copy of Method Budget couldn't be verified, so nothing was installed." Details names the check. |
-| Something else already has the name | "Something else called Method Budget.app is already in Applications." |
-| Administrator prompt cancelled | "Not installed. You can install it in your own Applications folder instead." |
-| Copy fails partway | "Method Budget couldn't be copied. Nothing was changed." (the staging copy is removed) |
+| macOS: the image won't mount | "The download is damaged. Try again." |
+| macOS: not exactly one app, wrong name or bundle id | "The download isn't what we expected, so nothing was installed." |
+| macOS: signature, team, notarisation or architecture check fails | "This copy of Method Budget couldn't be verified, so nothing was installed." Details names the check. |
+| macOS: something else has the name | "Something else called Method Budget.app is already in Applications." |
+| Administrator prompt cancelled | macOS: "Not installed. You can install it in your own Applications folder instead." Linux .deb: "Not installed. You can install the AppImage instead." |
+| Windows: installer closed without installing | "The installer closed before Method Budget was installed." |
+| Windows: installer reported an error | "The installer stopped with an error." with its exit code in Details |
+| Linux: AppImage won't start (FUSE missing) | "Method Budget needs FUSE to run on this system." with the help link |
+| Copy or placement fails partway | "Method Budget couldn't be installed. Nothing was changed." |
 | The manifest can't be read | the card keeps the installed version and shows "Couldn't check for updates" |
-| An app is installed on an Intel Mac copy, or is older than the launcher understands | shown as installed, with the version it reports; never changed |
-| The launcher quits mid-install | at next launch, leftover `.partial` downloads, staging copies and mounts it made are cleaned up |
+| The launcher quits mid-install | at next launch its leftovers are cleaned up (§4.5) |
 
 ## 9. Where things come from
 
-- **The catalog** is built into the launcher, from a file in this repository
-  (`crates/core/src/catalog.rs`), kept in step with the website's `apps.toml` by hand for
-  now. A test checks every entry: version-free download name matching
-  `Method-<Noun>-macOS.dmg`, bundle id `com.method<noun>.desktop`, https GitHub repository
-  under `method-production-suite`. If the suite publishes the catalog as a file on
-  methodproduction.com, the launcher can read it later, with the built-in copy as the
-  fallback (open question, §10).
-- **Network**: only `github.com` and GitHub's release-asset hosts, for manifests and
-  downloads, and the suite's own domains for links a person clicks (which open in their
-  browser). https only. No other host, ever, and the list is a constant in code with a test.
+- **The catalog** is built into the launcher (`crates/core/src/catalog.rs`), kept in step
+  with the website's `apps.toml` by hand for now. Installer names are derived from the app's
+  noun per target (§2), and a test checks every entry: names, bundle id
+  `com.method<noun>.desktop`, an https repository under `method-production-suite`. If the
+  suite publishes the catalog on methodproduction.com, the launcher can read it later, with
+  the built-in copy as the fallback (§11).
+- **Network**: only `github.com` and GitHub's release-asset hosts, for manifests, checksums
+  and downloads; links a person clicks open in their browser. https only. The list is a
+  constant in code with a test.
 
-## 10. Open questions
+### 9.1 What the current releases carry (2026-10-18)
+
+| App | Release | macOS .dmg | Windows setup .exe | Linux AppImage / .deb | Checksums | Manifest platforms |
+|---|---|---|---|---|---|---|
+| Method Storyteller | none yet | | | | | |
+| Method Reader | v0.13.0 | yes | yes | yes / yes | `SHA256SUMS-app` covers the installers (`SHA256SUMS` covers only the command-line archives) | darwin-aarch64 |
+| Method Schedule | v0.1.0 | yes | yes | yes / yes | **none** | darwin-aarch64 |
+| Method Budget | v0.4.0 | yes | yes | yes / yes | **none** | darwin-aarch64 |
+
+So today the launcher can install Method Reader on every system, and Method Schedule and
+Method Budget on macOS only. The fix is one file per release (cross-app item, through MOrg):
+`SHA256SUMS` listing every asset, installers included.
+
+## 10. Platform traits
+
+The window and the install flow are written once, against these traits (in
+`launcher-core::platform`); each system has one implementation, and tests use a fake one.
+
+| Trait | What it answers |
+|---|---|
+| `Locate` | Which catalog apps are installed, where, and at which version (§4.6). |
+| `Launch` | Open an app; open a file in its app; show a location (§6). |
+| `Install` | Turn a downloaded, checksum-checked installer into an installed app (§4.2 to §4.4), including its own verification. |
+| `Folders` | The launcher's cache and data folders, and an app's data folder for `recent.json`. |
+
+## 11. Open questions
 
 For the owner, with recommendations, in ROADMAP.md "Waiting on the owner": the name, the
-accent, the repository.
+accent, the repository, AppImage or .deb by default on Linux, and building the launcher for
+Linux arm64.
 
-For MOrg and the other app sessions (cross-app), also in ROADMAP.md:
+For MOrg and the other app sessions (cross-app), in ROADMAP.md:
 
-1. A public feed for "New in the apps", if the website wants one. Recommend: not in the
-   first version.
-2. Publishing the catalog as a file on methodproduction.com (for example `/apps.json` built
-   from `apps.toml`). Recommend: later; built-in catalog first.
-3. A shared launch argument in every app for "check for updates now" and "open the
-   sample", and the shared `recent.json` shape.
+1. `SHA256SUMS` on every release, listing every asset (§9.1), and later signed.
+2. Launch arguments every app accepts: "check for updates now" and "open the sample".
+3. The shared `recent.json` shape, and each app's data folder on Windows and Linux.
+4. Each app's Linux package name and Windows uninstall display name, for §4.6.
+5. A catalog file on methodproduction.com and a "New in the apps" feed: not in the first
+   version.
 
-## 11. Testing
+## 12. Testing
 
-Headless by default (the suite's rule): the core crate's logic (catalog, versions, Mach-O
-reading, recent-file parsing, the redirect allow-list, the verify requirement string) by unit
-tests; the install flow against local fixture images built in tests, with the signature
-checks behind a trait so tests can use a fixed answer; and a `method-launcher` command line
-(`list`, `status`, `verify <path.app>`, `install <slug> --to <folder>`) that drives the same
-code without a window. Pictures for the README and site are drawn offscreen (SUITE-STANDARDS.md
-§7). A real install of a real release into a scratch folder is a manual check before each
-release, run by the owner from the ready-to-run list in ROADMAP.md.
+Headless by default (the suite's rule), on all three systems in CI: the core crate's logic
+(catalog and installer names per target, versions, Mach-O reading, checksum parsing and
+hashing, the redirect allow-list, the signing requirement) by unit tests; the install flow
+against a fake `Install` and local fixture files; and a `method-launcher` command line
+(`list`, `status`, `verify <file>`, `install <slug> --to <folder>`) that drives the same code
+without a window. Pictures for the README and site are drawn offscreen (SUITE-STANDARDS.md
+§7). A real install of each released app on each system is a manual check before each
+release, from the ready-to-run list in ROADMAP.md.

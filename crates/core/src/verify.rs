@@ -1,4 +1,5 @@
-//! What a downloaded app must be before it is copied into Applications (docs/spec.md §4.4).
+//! What a downloaded app must be on macOS before it is copied into Applications (docs/spec.md
+//! §4.2).
 //! The checks that need the system (`codesign`, `spctl`) run in the app; this module holds
 //! what they check against, so a test pins it.
 

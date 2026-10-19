@@ -1,4 +1,4 @@
-//! Is a file an Apple-silicon-only Mach-O? (docs/spec.md §4.4 step 4.) The launcher reads the
+//! Is a file an Apple-silicon-only Mach-O? (docs/spec.md §4.2, macOS.) The launcher reads the
 //! headers itself, so the check doesn't need developer tools on the Mac. Only the start of a
 //! file is needed: [`HEADER_BYTES`] covers a fat header with every slice an app could carry.
 
