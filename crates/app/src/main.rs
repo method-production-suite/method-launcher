@@ -5,11 +5,12 @@
 
 mod images;
 mod state;
+mod theme;
 
 #[cfg(test)]
 mod screens;
 
-use images::{WINDOW_ICON, decode_png, mark_png};
+use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png};
 use launcher_core::catalog::{APPS, App};
 use launcher_core::platform::{Installed, Launch, Locate, Opened};
 use launcher_sys::{InstallError, Stage, System};
@@ -71,7 +72,8 @@ struct Launcher {
     /// Each app's mark, and its own icon once found installed, ready to draw.
     marks: Vec<Option<egui::TextureHandle>>,
     icons: Vec<Option<egui::TextureHandle>>,
-    logo: Option<egui::TextureHandle>,
+    /// The suite's wordmark, light and dark.
+    wordmark: [Option<egui::TextureHandle>; 2],
     /// Cards whose failure details are open.
     details: HashSet<usize>,
     /// One line about the last thing the person did, and whether it went wrong.
@@ -81,6 +83,8 @@ struct Launcher {
 
 impl Launcher {
     fn new(ctx: &egui::Context) -> Self {
+        theme::apply(ctx);
+        theme::use_system_font(ctx);
         let texture = |name: String, png: &[u8]| decode_png(png).map(|image| ctx.load_texture(name, image, egui::TextureOptions::LINEAR));
         let marks = APPS.iter().map(|app| texture(format!("mark-{}", app.slug), mark_png(app))).collect();
         let (send, receive) = mpsc::channel();
@@ -95,7 +99,7 @@ impl Launcher {
             receive,
             marks,
             icons: vec![None; APPS.len()],
-            logo: texture("launcher".into(), WINDOW_ICON),
+            wordmark: [texture("wordmark".into(), WORDMARK), texture("wordmark-dark".into(), WORDMARK_DARK)],
             details: HashSet::new(),
             notice: None,
             focused: true,
@@ -253,7 +257,7 @@ impl Launcher {
                 if ui.add(accent_button(ui, "Quit and update", LAUNCHER_ACCENT)).clicked() {
                     answer = Some(true);
                 }
-                if ui.add(egui::Button::new(egui::RichText::new("Cancel").size(15.0)).corner_radius(8.0).min_size(egui::vec2(0.0, 34.0))).clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new("Cancel").size(15.0)).corner_radius(8.0)).clicked() {
                     answer = Some(false);
                 }
             });
@@ -445,7 +449,7 @@ fn accent_button<'a>(ui: &egui::Ui, label: &str, accent: (&str, &str)) -> egui::
     let dark = ui.visuals().dark_mode;
     let fill = colour(if dark { accent.1 } else { accent.0 });
     let ink = if dark { DARK_INK } else { egui::Color32::WHITE };
-    egui::Button::new(egui::RichText::new(label).size(15.0).strong().color(ink)).fill(fill).corner_radius(8.0).min_size(egui::vec2(96.0, 34.0))
+    egui::Button::new(egui::RichText::new(label).size(15.0).strong().color(ink)).fill(fill).corner_radius(8.0).min_size(egui::vec2(96.0, 0.0))
 }
 
 fn set<T>(list: &mut [T], index: usize, value: T) {
@@ -493,18 +497,21 @@ impl eframe::App for Launcher {
         self.confirm_quit(&ctx);
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(28.0)).show(ui, |ui| {
             ui.horizontal(|ui| {
-                if let Some(logo) = &self.logo {
-                    ui.add(egui::Image::new((logo.id(), egui::vec2(40.0, 40.0))));
-                }
                 ui.vertical(|ui| {
-                    ui.label(egui::RichText::new(APP_NAME).size(24.0).strong());
+                    let dark = ui.visuals().dark_mode;
+                    if let Some(wordmark) = self.wordmark.get(usize::from(dark)).cloned().flatten() {
+                        let height = 30.0;
+                        let size = wordmark.size_vec2();
+                        ui.add(egui::Image::new((wordmark.id(), egui::vec2(height * size.x / size.y, height))));
+                    } else {
+                        ui.label(egui::RichText::new("Method Production Suite").size(24.0).strong());
+                    }
+                    ui.add_space(8.0);
                     ui.label(
-                        egui::RichText::new("Install the apps you want. Each one keeps itself up to date.")
-                            .size(14.0)
-                            .color(ui.visuals().weak_text_color()),
+                        egui::RichText::new("Install the apps you want. Each one updates itself.").size(15.0).color(ui.visuals().weak_text_color()),
                     );
                 });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     let updatable = self.updatable();
                     if installs_here() && !updatable.is_empty() {
                         let label = format!("Update all ({})", updatable.len());
@@ -513,7 +520,7 @@ impl eframe::App for Launcher {
                         }
                         ui.add_space(8.0);
                     }
-                    let refresh = egui::Button::new(egui::RichText::new("Refresh").size(14.0)).corner_radius(8.0).min_size(egui::vec2(0.0, 30.0));
+                    let refresh = egui::Button::new(egui::RichText::new("Refresh").size(15.0)).corner_radius(8.0);
                     if ui.add_enabled(!self.scanning, refresh).clicked() {
                         self.rescan(&ctx);
                         self.check_latest(&ctx);

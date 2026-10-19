@@ -11,6 +11,9 @@ Font License 1.1 and the Ubuntu Font Licence 1.0.
 
 Pictures
 
+assets/brand/*.svg: the Method Production Suite's mark, wordmark and favicon, copied
+  unchanged from the suite's website (drawn by its tools/make-brand.py), by the Method
+  Production Suite Team, under the same licences. assets/brand/*.png and packaging/icons/:
+  rendered from them by scripts/make-icons.py.
 assets/apps/*.png: each suite app's mark, from that app's site, by the Method Production
-  Suite Team, under the same licences. packaging/icons/: the launcher's icon, drawn by
-  scripts/make-icons.py.
+  Suite Team, under the same licences.

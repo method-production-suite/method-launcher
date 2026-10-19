@@ -78,6 +78,15 @@ samples, Help; the launcher's own updates (§5.2).
 One window, 960 by 640 logical points by default, resizable down to 720 by 520. Light and
 dark follow the system.
 
+The launcher carries the Method Production Suite's branding (the owner, 2026-10-19): its
+icon is the suite's mark on the family's white rounded square; the window opens with the
+suite's wordmark, light or dark with the system, and "Install the apps you want. Each one
+updates itself." under it; colours are the suite's tokens (the website's
+`shared/tokens-base.css`) and the type is the system's own sans-serif, as the sites use.
+Ochre (`#9A5B00` light, `#F0B54A` dark) is the launcher's own accent, for its own main
+buttons (Update all, Quit and update) and focus only; each app's card uses that app's
+accent for its main button, as the suite's website does.
+
 ### 3.1 The apps
 
 The main view. One card per catalog app, in catalog order, one column at narrow widths and two

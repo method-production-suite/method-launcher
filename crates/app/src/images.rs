@@ -2,8 +2,13 @@
 
 use launcher_core::catalog::App;
 
-/// The launcher's own icon, drawn by scripts/make-icons.py.
+/// The launcher's icon, the suite's mark, drawn by scripts/make-icons.py.
 pub const WINDOW_ICON: &[u8] = include_bytes!("../../../packaging/icons/icon-256.png");
+
+/// The suite's wordmark for the header, light and dark, rendered by scripts/make-icons.py
+/// from assets/brand/wordmark.svg and wordmark-dark.svg.
+pub const WORDMARK: &[u8] = include_bytes!("../../../assets/brand/wordmark.png");
+pub const WORDMARK_DARK: &[u8] = include_bytes!("../../../assets/brand/wordmark-dark.png");
 
 /// Each app's mark (its site's touch icon), drawn when its own icon can't be read.
 pub fn mark_png(app: &App) -> &'static [u8] {
