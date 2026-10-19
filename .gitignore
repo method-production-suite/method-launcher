@@ -1,6 +1,26 @@
-target/
-.DS_Store
-# private notes
+# Secrets: never commit
+.env
+.env.*
+.mcp.json
+*.pem
+*.key
+*.p8
+*.p12
+id_rsa*
+
+# Private notes
 HANDOFF.md
 KICKOFF.md
+BORN-SECURE.md
 docs/KICKOFF.md
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs / scratch
+*.log
+
+# Rust
+/target

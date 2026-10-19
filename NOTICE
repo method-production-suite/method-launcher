@@ -1,0 +1,10 @@
+Method Launcher
+Copyright (c) 2026 Method Production Suite Team and the Method Launcher contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Dependencies
+
+The Rust crates this app is built from keep their own licences, all compatible with MIT OR
+Apache-2.0 (deny.toml lists the ones allowed). egui's interface fonts are under the SIL Open
+Font License 1.1 and the Ubuntu Font Licence 1.0.
