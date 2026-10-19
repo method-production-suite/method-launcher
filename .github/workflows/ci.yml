@@ -4,6 +4,9 @@ name: ci
 # Weekly, the crate-age and deny checks run again on main, since crates and advisories
 # change without a push.
 #
+# Lean CI (SUITE-STANDARDS.md §6): pull requests and pushes to main run Linux only, on x86_64
+# and arm64. macOS and Windows build every night in nightly.yml, and on every release.
+#
 # Pull requests open as drafts and build nothing; marking one ready for review starts the
 # full run. Changes to documentation alone skip the Rust jobs. Both skips use `if:`, never
 # `paths-ignore`, so the required checks still report (a skipped job counts as passing).
@@ -69,7 +72,7 @@ jobs:
           fi
           echo "rust=$rust" | tee -a "$GITHUB_OUTPUT"
   gates-linux-x86_64:
-    # Named as main's required checks expect. One job per system rather than a matrix: a
+    # Named as main's required checks expect. One job per runner rather than a matrix: a
     # matrix skipped by `if:` reports one unexpanded check, and the required ones would wait.
     name: gates (ubuntu-latest)
     needs: changes
@@ -89,7 +92,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask ci
   gates-linux-arm64:
-    # Named as main's required checks expect. One job per system rather than a matrix: a
+    # Named as main's required checks expect. One job per runner rather than a matrix: a
     # matrix skipped by `if:` reports one unexpanded check, and the required ones would wait.
     name: gates (ubuntu-24.04-arm)
     needs: changes
@@ -102,42 +105,6 @@ jobs:
           persist-credentials: false
       - name: Linux packages for eframe
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev
-      # Caches are saved only on main and only restored on pull requests, so the org stays
-      # under GitHub's cache limit (SUITE-STANDARDS.md §6).
-      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo xtask ci
-  gates-macos:
-    # Named as main's required checks expect. One job per system rather than a matrix: a
-    # matrix skipped by `if:` reports one unexpanded check, and the required ones would wait.
-    name: gates (macos-latest)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 60
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Caches are saved only on main and only restored on pull requests, so the org stays
-      # under GitHub's cache limit (SUITE-STANDARDS.md §6).
-      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo xtask ci
-  gates-windows:
-    # Named as main's required checks expect. One job per system rather than a matrix: a
-    # matrix skipped by `if:` reports one unexpanded check, and the required ones would wait.
-    name: gates (windows-latest)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 60
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # Caches are saved only on main and only restored on pull requests, so the org stays
       # under GitHub's cache limit (SUITE-STANDARDS.md §6).
       - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
