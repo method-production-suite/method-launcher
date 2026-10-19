@@ -12,11 +12,11 @@ mod screens;
 
 use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png, trim};
 use launcher_core::catalog::{APPS, App};
+use launcher_core::platform::Folders;
 use launcher_core::platform::{Installed, Launch, Locate, Opened};
-use launcher_sys::{InstallError, Stage, System};
+use launcher_sys::{InstallError, Recent, Stage, System};
 use state::{Badge, Found, Job, Latest, Primary, installs_here, primary, primary_label, status};
 use std::collections::{HashSet, VecDeque};
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 
@@ -42,7 +42,7 @@ fn main() -> eframe::Result<()> {
         println!("method-launcher-app {} ({APP_NAME})", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([1000.0, 680.0]).with_min_inner_size([760.0, 560.0]);
+    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([1000.0, 820.0]).with_min_inner_size([760.0, 560.0]);
     if let Some(icon) = decode_png(WINDOW_ICON) {
         viewport =
             viewport.with_icon(Arc::new(egui::IconData { width: icon.width() as u32, height: icon.height() as u32, rgba: icon.as_raw().to_vec() }));
@@ -51,13 +51,19 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(Launcher::new(&cc.egui_ctx)))))
 }
 
-/// One app as a search found it: where it is, and its own icon if it could be read.
-type Scanned = (Option<Installed>, Option<egui::ColorImage>);
+/// One app as a search found it: where it is, its own icon if it could be read, and the files
+/// it opened lately.
+type Scanned = (Option<Installed>, Option<egui::ColorImage>, Vec<Recent>);
+
+/// How many recent files the window lists.
+const RECENT_SHOWN: usize = 10;
 
 /// News from the worker threads.
 enum Event {
     Scanned(Vec<Scanned>),
     Latest(usize, Latest),
+    /// The launcher's own latest release, when it is newer than this one.
+    LauncherNewer(String),
     // Installs run from the launcher on macOS only, so far.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Stage(usize, Stage),
@@ -79,6 +85,11 @@ struct Launcher {
     /// Version checks still running, and when the last round finished.
     checking: usize,
     checked: Option<std::time::SystemTime>,
+    /// A newer release of the launcher itself (spec §5.2).
+    launcher_newer: Option<String>,
+    /// The suite's recent files, newest first, each with its app's index.
+    recent: Vec<(usize, Recent)>,
+    settings: Settings,
     send: mpsc::Sender<Event>,
     receive: mpsc::Receiver<Event>,
     /// Each app's mark, and its own icon once found installed, ready to draw.
@@ -109,6 +120,9 @@ impl Launcher {
             scanning: false,
             checking: 0,
             checked: None,
+            launcher_newer: None,
+            recent: Vec::new(),
+            settings: Settings::load(),
             send,
             receive,
             marks,
@@ -125,7 +139,9 @@ impl Launcher {
             std::thread::spawn(move || launcher_sys::install_macos::clean_up(&dirs));
         }
         launcher.rescan(ctx);
-        launcher.check_latest(ctx);
+        if launcher.settings.check_for_updates {
+            launcher.check_latest(ctx);
+        }
         launcher
     }
 
@@ -142,7 +158,7 @@ impl Launcher {
                 .map(|app| {
                     let installed = System.locate(app);
                     let icon = installed.as_ref().and_then(|i| System.app_icon(app, i)).and_then(|png| decode_png(&png)).map(trim);
-                    (installed, icon)
+                    (installed, icon, System.recent_files(app))
                 })
                 .collect();
             let _ = send.send(Event::Scanned(found));
@@ -156,6 +172,17 @@ impl Launcher {
             return;
         }
         self.checking = APPS.iter().filter(|a| a.released).count();
+        {
+            let (send, ctx) = (self.send.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                if let Ok(latest) = System.launcher_latest()
+                    && launcher_core::version::is_newer(&latest, env!("CARGO_PKG_VERSION"))
+                {
+                    let _ = send.send(Event::LauncherNewer(latest));
+                    ctx.request_repaint();
+                }
+            });
+        }
         for (index, app) in APPS.iter().enumerate().filter(|(_, a)| a.released) {
             let (send, ctx) = (self.send.clone(), ctx.clone());
             std::thread::spawn(move || {
@@ -173,11 +200,16 @@ impl Launcher {
                     self.icons = APPS
                         .iter()
                         .zip(&found)
-                        .map(|(app, (_, icon))| {
+                        .map(|(app, (_, icon, _))| {
                             icon.clone().map(|image| ctx.load_texture(format!("icon-{}", app.slug), image, egui::TextureOptions::LINEAR))
                         })
                         .collect();
-                    self.found = found.into_iter().map(|(f, _)| f.map_or(Found::Missing, Found::Installed)).collect();
+                    let mut recent: Vec<(usize, Recent)> =
+                        found.iter().enumerate().flat_map(|(index, (_, _, files))| files.iter().cloned().map(move |r| (index, r))).collect();
+                    recent.sort_by_key(|(_, r)| std::cmp::Reverse(r.opened));
+                    recent.truncate(RECENT_SHOWN);
+                    self.recent = recent;
+                    self.found = found.into_iter().map(|(f, _, _)| f.map_or(Found::Missing, Found::Installed)).collect();
                     self.scanning = false;
                 }
                 Event::Latest(index, latest) => {
@@ -187,6 +219,7 @@ impl Launcher {
                         self.checked = Some(std::time::SystemTime::now());
                     }
                 }
+                Event::LauncherNewer(version) => self.launcher_newer = Some(version),
                 Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
                 Event::Done(index, result) => {
                     let app = APPS.get(index).map_or("The app", |a| a.name);
@@ -500,6 +533,74 @@ impl Launcher {
             });
     }
 
+    /// Recent files across the suite (spec §3.2): newest first, each opening in its app.
+    fn recent_files(&mut self, ui: &mut egui::Ui) {
+        let muted = ui.visuals().weak_text_color();
+        ui.label(egui::RichText::new("Recent files").size(17.0).strong());
+        ui.add_space(12.0);
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+            .corner_radius(CARD_RADIUS)
+            .inner_margin(egui::Margin::symmetric(24, 12))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                if self.recent.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Files you open in the Method apps show up here.").size(14.0).color(muted));
+                    ui.add_space(6.0);
+                    return;
+                }
+                let rows = self.recent.clone();
+                for (n, (index, file)) in rows.iter().enumerate() {
+                    if n > 0 {
+                        ui.separator();
+                    }
+                    let Some(app) = APPS.get(*index) else { continue };
+                    let installed = match self.found.get(*index) {
+                        Some(Found::Installed(installed)) => Some(installed.clone()),
+                        _ => None,
+                    };
+                    let mark = self.icons.get(*index).cloned().flatten().or_else(|| self.marks.get(*index).cloned().flatten());
+                    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        if let Some(mark) = &mark {
+                            ui.add(egui::Image::new((mark.id(), egui::vec2(22.0, 22.0))).corner_radius(5.0));
+                        }
+                        let name = file.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                        let opened = ui
+                            .add(egui::Label::new(egui::RichText::new(&name).size(14.5)).sense(egui::Sense::click()).truncate())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!("Open in {}", app.name));
+                        if opened.clicked() {
+                            match &installed {
+                                Some(installed) => {
+                                    if let Err(e) = System.open_file(app, installed, &file.path) {
+                                        self.notice = Some((format!("{name} couldn't be opened. {e}"), true));
+                                    }
+                                }
+                                None => self.notice = Some((format!("Install {} to open {name}.", app.name), true)),
+                            }
+                        }
+                        let folder = file.path.parent().map(shorten_home).unwrap_or_default();
+                        ui.add(egui::Label::new(egui::RichText::new(folder).size(13.0).color(muted)).truncate());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 18.0;
+                            if link(ui, SHOW_LOCATION)
+                                && let Err(e) = System.show_location(&file.path)
+                            {
+                                self.notice = Some((format!("{name} couldn't be shown. {e}"), true));
+                            }
+                            ui.label(egui::RichText::new(day(file.opened)).size(13.0).color(muted));
+                            if installed.is_none() {
+                                ui.label(egui::RichText::new(format!("{} isn't installed", app.name)).size(13.0).color(muted));
+                            }
+                        });
+                    });
+                }
+            });
+    }
+
     fn act(&mut self, ctx: &egui::Context, index: usize, app: &App, found: &Found, main: &Primary) {
         match main {
             Primary::Open => {
@@ -610,12 +711,23 @@ impl eframe::App for Launcher {
                     }
                     let checked = match (self.checking, self.checked) {
                         (0, Some(at)) => format!("Checked {}", ago(at)),
+                        (0, None) if !self.settings.check_for_updates => "Update checks are off".to_string(),
                         (0, None) => String::new(),
                         _ => "Checking for updates".to_string(),
                     };
                     ui.label(egui::RichText::new(checked).size(13.0).color(muted));
                 });
             });
+            if let Some(version) = self.launcher_newer.clone() {
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    ui.label(egui::RichText::new(format!("Method Launcher {version} is available.")).size(14.0));
+                    if link(ui, "Download it") {
+                        self.link(launcher_core::catalog::LAUNCHER_RELEASES);
+                    }
+                });
+            }
             if let Some((text, error)) = &self.notice {
                 ui.add_space(14.0);
                 let colour = if *error { ui.visuals().error_fg_color } else { ui.visuals().text_color() };
@@ -635,7 +747,9 @@ impl eframe::App for Launcher {
                         }
                     });
                 }
-                // Footer: where downloads come from, and the suite's site.
+                ui.add_space(32.0);
+                self.recent_files(ui);
+                // Footer: where downloads come from, the update-check switch, and the suite's site.
                 ui.add_space(24.0);
                 ui.separator();
                 ui.add_space(10.0);
@@ -651,6 +765,17 @@ impl eframe::App for Launcher {
                         }
                     });
                 });
+                ui.add_space(8.0);
+                let mut on = self.settings.check_for_updates;
+                if ui.checkbox(&mut on, egui::RichText::new("Check for updates automatically").size(13.0).color(muted)).changed() {
+                    self.settings.check_for_updates = on;
+                    if let Err(e) = self.settings.save() {
+                        self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
+                    }
+                    if on && self.checked.is_none() {
+                        self.check_latest(&ctx);
+                    }
+                }
             });
         });
     }
@@ -729,6 +854,67 @@ fn demo_note(opened: &[&str], open_already: &[&str], skipped: &[&str], failed: &
     parts.join(" ")
 }
 
+/// A folder with the home folder shown as `~`.
+fn shorten_home(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+    match home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// When a file was opened, as a day: "Today", "Yesterday", or a date.
+fn day(at: std::time::SystemTime) -> String {
+    let secs = |t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let (then, now) = (secs(at).div_euclid(86_400), secs(std::time::SystemTime::now()).div_euclid(86_400));
+    match now - then {
+        0 => "Today".to_string(),
+        1 => "Yesterday".to_string(),
+        _ => {
+            // Days since 1970 back to a date (Howard Hinnant's civil_from_days).
+            let z = then + 719_468;
+            let era = z.div_euclid(146_097);
+            let doe = z - era * 146_097;
+            let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let d = doy - (153 * mp + 2) / 5 + 1;
+            let m = if mp < 10 { mp + 3 } else { mp - 9 };
+            let y = yoe + era * 400 + i64::from(m <= 2);
+            launcher_core::release::short_date((y as u32, m as u32, d as u32))
+        }
+    }
+}
+
+/// The launcher's own settings, in `settings.json` in its data folder.
+#[derive(Clone, Debug, PartialEq)]
+struct Settings {
+    /// SUITE-STANDARDS.md §1: on by default; Refresh still checks by hand.
+    check_for_updates: bool,
+}
+
+impl Settings {
+    fn path() -> Option<PathBuf> {
+        System.data().map(|d| d.join("settings.json"))
+    }
+
+    fn load() -> Settings {
+        let json = Settings::path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+        Settings { check_for_updates: value.get("check_for_updates").and_then(|v| v.as_bool()).unwrap_or(true) }
+    }
+
+    fn save(&self) -> Result<(), String> {
+        let path = Settings::path().ok_or("no data folder")?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::json!({ "check_for_updates": self.check_for_updates });
+        std::fs::write(&path, format!("{json:#}\n")).map_err(|e| e.to_string())
+    }
+}
+
 /// How long ago, in words.
 fn ago(at: std::time::SystemTime) -> String {
     let minutes = at.elapsed().map(|d| d.as_secs() / 60).unwrap_or(0);
@@ -759,6 +945,21 @@ mod tests {
             demo_note(&[], &[], &["Storyteller", "Schedule"], &["Reader"]),
             "Reader couldn't be opened. Skipped Storyteller and Schedule, which aren't installed."
         );
+    }
+
+    #[test]
+    fn days_read_as_dates() {
+        assert_eq!(day(std::time::SystemTime::now()), "Today");
+        assert_eq!(day(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_772_712_000)), "5 Mar 2026");
+    }
+
+    #[test]
+    fn home_is_shortened() {
+        if let Some(home) = std::env::var_os("HOME") {
+            let path = PathBuf::from(home).join("Films");
+            assert_eq!(shorten_home(&path), format!("~{}Films", std::path::MAIN_SEPARATOR));
+        }
+        assert_eq!(shorten_home(std::path::Path::new("/Volumes/Films")), "/Volumes/Films");
     }
 
     #[test]

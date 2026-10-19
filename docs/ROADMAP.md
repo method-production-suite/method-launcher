@@ -117,7 +117,8 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 ## M5: Release
 
-- **[missing] M** Release workflow: build before secrets; macOS signed, notarised, stapled
+- **[partial] M** Release workflow (have: everything below for the four x86_64, Mac and
+  Windows files, with a main-only rehearsal; missing: the Linux arm64 build, for 0.1.1): build before secrets; macOS signed, notarised, stapled
   with the enforced arm64 check; Windows setup (signtool step off until a certificate
   exists); Linux AppImage and `.deb` (x86_64, and arm64 per decision 5); version-free names
   (`Method-Launcher-macOS.dmg`, `Method-Launcher-windows-x64-setup.exe`,

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Method Launcher
+GenericName=App launcher
+Comment=Install, update and open the Method Production Suite's apps
+Exec=method-launcher-app
+Icon=method-launcher
+Terminal=false
+Categories=Utility;
+Keywords=method;film;screenplay;schedule;budget;install;
+StartupWMClass=method-launcher-app
