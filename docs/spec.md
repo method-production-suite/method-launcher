@@ -267,7 +267,7 @@ partial downloads, staging copies and mounts of its own.
 | macOS | `/Applications` and `~/Applications`, bundles with the catalog's bundle id | `CFBundleShortVersionString` |
 | Windows | the per-user and per-machine uninstall entries in the registry, matched by display name `Method <Noun>` | `DisplayVersion`; the executable from `InstallLocation` |
 | Linux, AppImage | the launcher's `installed.json`, then the files it names | the version recorded at install |
-| Linux, .deb | `dpkg-query -W method-<noun>` | the package version |
+| Linux, .deb | `dpkg-query -W method-<noun>`, and `method-<noun>-app` on the PATH to open it (never the `.desktop` file's name, which varies) | the package version |
 
 An app installed by hand (dragged in, or installed from the website) is found the same way
 and shown as installed.
@@ -288,8 +288,9 @@ and shown as installed.
   apt). When an app gains its own updater on that system, the launcher goes back to detect
   only for it.
 - To make the macOS path immediate, the launcher opens the app with `--check-for-updates`
-  (SUITE-STANDARDS.md §2). For an installed version older than that rule, its card says
-  "Choose Help > Check for Updates in Method Budget."
+  (SUITE-STANDARDS.md §2) when it isn't already running (§6). For an installed version older
+  than that rule, or an app that's already open, its card says "Choose Help > Check for
+  Updates in Method Budget."
 - Timing follows SUITE-STANDARDS.md §1: 2 minutes after launch, then every 6 hours while
   open, and when the window comes forward if the last check is more than an hour old. The
   Settings switch turns this off; Check for Updates... still works by hand.
@@ -307,11 +308,17 @@ and shown as installed.
 ## 6. Open and recent files
 
 - **Open an app**: macOS `open -b <bundle id>`; Windows, the app's executable from §4.6;
-  Linux, the AppImage path, or the `.deb`'s desktop entry `Exec` line. Nothing else is
-  passed.
+  Linux, the AppImage path, or `method-<noun>-app` on the PATH for the `.deb`. Nothing else
+  is passed.
+- **Launch arguments** (`--check-for-updates`, `--open-sample`, SUITE-STANDARDS.md §2) work
+  only when the app starts: an app without single-instance handling drops them on a second
+  launch. So the launcher passes them only when the app isn't running. When it is, the
+  launcher brings it forward with no arguments, and the card says what to choose instead:
+  "Method Budget is open. Choose Help > Check for Updates" (or Help > Open Sample).
 - **Recent files**: each app keeps `recent.json` in its data folder named by its bundle id
   (SUITE-STANDARDS.md §2): `~/Library/Application Support/<id>/` on macOS,
-  `%APPDATA%\<id>\` on Windows, `$XDG_DATA_HOME/<id>/` (default `~/.local/share/<id>/`) on
+  `%APPDATA%\<id>\` on Windows, then `%LOCALAPPDATA%\<id>\` (where Method Budget, like
+  other apps on its framework, keeps it), `$XDG_DATA_HOME/<id>/` (default `~/.local/share/<id>/`) on
   Linux. The launcher reads those files only; a missing, unreadable or unknown-shape file is
   skipped for that app. The shape (SUITE-STANDARDS.md §2) is a list, newest first, of
   entries each with an absolute `path` and an RFC 3339 `opened` time.
@@ -325,8 +332,8 @@ and shown as installed.
 
 Each installed app's card has Open Sample: it opens the app with its Field Station sample
 (SUITE-STANDARDS.md §8), as a fresh untitled copy, exactly as the app's own Help > Open
-Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2). For an
-installed version older than that rule, the button is hidden. The launcher ships no sample
+Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2) when it isn't
+already running (§6). For an installed version older than that rule, the button is hidden. The launcher ships no sample
 files.
 
 ## 8. Failure cases
@@ -389,7 +396,7 @@ The window and the install flow are written once, against these traits (in
 | Trait | What it answers |
 |---|---|
 | `Locate` | Which catalog apps are installed, where, and at which version (§4.6). |
-| `Launch` | Open an app; open a file in its app; show a location (§6). |
+| `Launch` | Whether an app is running; open it (with launch arguments only when it isn't); open a file in its app; show a location (§6). |
 | `Install` | Turn a downloaded, checksum-checked installer into an installed app (§4.2 to §4.4), including its own verification. |
 | `Folders` | The launcher's cache and data folders, and an app's data folder for `recent.json`. |
 

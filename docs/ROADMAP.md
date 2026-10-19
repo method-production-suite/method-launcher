@@ -69,9 +69,9 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   target. Have: the traits, `Target`, and the names with their tests.
 - **[missing] S** The apps view (spec §3.1).
 - **[missing] M** `Locate` on each system: bundles by id on macOS, uninstall entries on
-  Windows, `installed.json` and `dpkg-query` on Linux.
-- **[missing] S** `Launch` on each system: open an app, show its location; Release notes
-  link.
+  Windows, `installed.json`, `dpkg-query` and `method-<noun>-app` on the PATH on Linux.
+- **[missing] S** `Launch` on each system: whether an app is running, open it (launch
+  arguments only when it isn't), show its location; Release notes link.
 - **[missing] S** Command line: `method-launcher list` and `status`.
 
 ## M2: Install
