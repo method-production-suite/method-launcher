@@ -13,7 +13,7 @@ use images::{WINDOW_ICON, decode_png, mark_png};
 use launcher_core::catalog::{APPS, App};
 use launcher_core::platform::{Installed, Launch, Locate, Opened};
 use launcher_sys::{InstallError, Stage, System};
-use state::{Found, Job, Latest, Primary, primary, primary_label, status_line};
+use state::{Found, Job, Latest, Primary, installs_here, primary, primary_label, status_line};
 use std::collections::{HashSet, VecDeque};
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
@@ -59,8 +59,12 @@ struct Launcher {
     found: Vec<Found>,
     latest: Vec<Latest>,
     jobs: Vec<Job>,
-    /// Installs waiting for the one running to finish (spec §3.1: one at a time).
-    queue: VecDeque<usize>,
+    /// Installs waiting for the one running to finish (spec §3.1: one at a time), each with
+    /// whether the person agreed to quit the app first.
+    queue: VecDeque<(usize, bool)>,
+    /// Installs waiting for the person to agree to quit the apps that are open: the batch,
+    /// and which of them are running.
+    confirm: Option<(Vec<usize>, Vec<usize>)>,
     scanning: bool,
     send: mpsc::Sender<Event>,
     receive: mpsc::Receiver<Event>,
@@ -85,6 +89,7 @@ impl Launcher {
             latest: vec![Latest::Unknown; APPS.len()],
             jobs: vec![Job::Idle; APPS.len()],
             queue: VecDeque::new(),
+            confirm: None,
             scanning: false,
             send,
             receive,
@@ -165,8 +170,8 @@ impl Launcher {
                         Err(error) => set(&mut self.jobs, index, Job::Failed(error)),
                     }
                     self.rescan(ctx);
-                    if let Some(next) = self.queue.pop_front() {
-                        self.start_install(ctx, next);
+                    if let Some((next, quit)) = self.queue.pop_front() {
+                        self.start_install(ctx, next, quit);
                     }
                 }
             }
@@ -177,19 +182,96 @@ impl Launcher {
         self.jobs.iter().any(|j| matches!(j, Job::Running(_)))
     }
 
-    /// Installs or updates the app at `index`, or queues it behind the one running.
-    fn install(&mut self, ctx: &egui::Context, index: usize) {
-        self.details.remove(&index);
-        if self.busy() {
-            set(&mut self.jobs, index, Job::Waiting);
-            self.queue.push_back(index);
+    /// Installs or updates these apps, first asking to quit any that are open.
+    fn request_install(&mut self, ctx: &egui::Context, batch: Vec<usize>) {
+        let running: Vec<usize> = batch
+            .iter()
+            .copied()
+            .filter(|&i| match (APPS.get(i), self.found.get(i)) {
+                (Some(app), Some(Found::Installed(installed))) => System.is_running(app, installed),
+                _ => false,
+            })
+            .collect();
+        if running.is_empty() {
+            for index in batch {
+                self.install(ctx, index, false);
+            }
         } else {
-            self.start_install(ctx, index);
+            self.confirm = Some((batch, running));
+        }
+    }
+
+    /// Installs or updates the app at `index`, or queues it behind the one running.
+    fn install(&mut self, ctx: &egui::Context, index: usize, quit: bool) {
+        self.details.remove(&index);
+        if self.busy() || !self.queue.is_empty() {
+            set(&mut self.jobs, index, Job::Waiting);
+            self.queue.push_back((index, quit));
+        } else {
+            self.start_install(ctx, index, quit);
+        }
+    }
+
+    /// The apps whose main button is Update (or Install over an earlier name): Update all.
+    fn updatable(&self) -> Vec<usize> {
+        (0..APPS.len())
+            .filter(|&i| {
+                let (Some(app), Some(found), Some(latest), Some(job)) = (APPS.get(i), self.found.get(i), self.latest.get(i), self.jobs.get(i)) else {
+                    return false;
+                };
+                matches!(found, Found::Installed(_))
+                    && matches!(primary(app, found, latest, job), Primary::Update(_) | Primary::Install { replacing: Some(_), .. })
+            })
+            .collect()
+    }
+
+    /// The question before quitting open apps (spec §5.1).
+    fn confirm_quit(&mut self, ctx: &egui::Context) {
+        let Some((batch, running)) = self.confirm.clone() else { return };
+        let names: Vec<&str> = running.iter().filter_map(|&i| APPS.get(i).map(|a| a.name)).collect();
+        let (title, body) = match names.as_slice() {
+            [one] => (
+                format!("Quit {one} and update it?"),
+                format!("{one} is open. Method Launcher will ask it to quit, so it can ask you about anything unsaved, then update it."),
+            ),
+            _ => (
+                "Quit the open apps and update them?".to_string(),
+                format!(
+                    "{} are open. Method Launcher will ask each one to quit, so it can ask you about anything unsaved, then update it.",
+                    names.join(" and ")
+                ),
+            ),
+        };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::new("confirm-quit")).show(ctx, |ui| {
+            ui.set_max_width(420.0);
+            ui.label(egui::RichText::new(title).size(18.0).strong());
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new(body).size(14.0));
+            ui.add_space(16.0);
+            ui.horizontal(|ui| {
+                if ui.add(accent_button(ui, "Quit and update", LAUNCHER_ACCENT)).clicked() {
+                    answer = Some(true);
+                }
+                if ui.add(egui::Button::new(egui::RichText::new("Cancel").size(15.0)).corner_radius(8.0).min_size(egui::vec2(0.0, 34.0))).clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        match answer {
+            Some(true) => {
+                self.confirm = None;
+                for index in batch {
+                    self.install(ctx, index, running.contains(&index));
+                }
+            }
+            Some(false) => self.confirm = None,
+            None => {}
         }
     }
 
     #[cfg(target_os = "macos")]
-    fn start_install(&mut self, ctx: &egui::Context, index: usize) {
+    fn start_install(&mut self, ctx: &egui::Context, index: usize, quit: bool) {
         let Some(app) = APPS.get(index) else { return };
         let current = match self.found.get(index) {
             Some(Found::Installed(installed)) => Some(installed.clone()),
@@ -204,14 +286,14 @@ impl Launcher {
                 let _ = send.send(Event::Stage(index, stage));
                 ctx.request_repaint();
             };
-            let result = launcher_sys::install_macos::install(app, &dest, current.as_ref(), &report);
+            let result = launcher_sys::install_macos::install(app, &dest, current.as_ref(), quit, &report);
             let _ = send.send(Event::Done(index, result));
             ctx.request_repaint();
         });
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn start_install(&mut self, _ctx: &egui::Context, index: usize) {
+    fn start_install(&mut self, _ctx: &egui::Context, index: usize, _quit: bool) {
         if let Some(app) = APPS.get(index) {
             self.link(&app.releases_url());
         }
@@ -309,12 +391,7 @@ impl Launcher {
                             (Job::Failed(_), Primary::Install { .. } | Primary::Update(_)) => "Try again".to_string(),
                             _ => primary_label(app, &main),
                         };
-                        let ink = if dark { DARK_INK } else { egui::Color32::WHITE };
-                        let button = egui::Button::new(egui::RichText::new(label).size(15.0).strong().color(ink))
-                            .fill(accent)
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(96.0, 34.0));
-                        if ui.add(button).clicked() {
+                        if ui.add(accent_button(ui, &label, app.accent)).clicked() {
                             self.act(ui.ctx(), index, app, &found, &main);
                         }
                         ui.add_space(10.0);
@@ -351,13 +428,24 @@ impl Launcher {
                     self.open(app, installed);
                 }
             }
-            Primary::Update(_) | Primary::Install { .. } => self.install(ctx, index),
+            Primary::Update(_) | Primary::Install { .. } => self.request_install(ctx, vec![index]),
             Primary::VisitSite => self.link(app.site),
             Primary::BuildFromSource => self.link(&app.source_url()),
             Primary::DownloadPage => self.link(&app.releases_url()),
             Primary::None => {}
         }
     }
+}
+
+/// The launcher's own accent, ochre, light and dark: its own main buttons only.
+const LAUNCHER_ACCENT: (&str, &str) = ("#9A5B00", "#F0B54A");
+
+/// A main button filled with an accent, as the sites draw theirs.
+fn accent_button<'a>(ui: &egui::Ui, label: &str, accent: (&str, &str)) -> egui::Button<'a> {
+    let dark = ui.visuals().dark_mode;
+    let fill = colour(if dark { accent.1 } else { accent.0 });
+    let ink = if dark { DARK_INK } else { egui::Color32::WHITE };
+    egui::Button::new(egui::RichText::new(label).size(15.0).strong().color(ink)).fill(fill).corner_radius(8.0).min_size(egui::vec2(96.0, 34.0))
 }
 
 fn set<T>(list: &mut [T], index: usize, value: T) {
@@ -402,6 +490,7 @@ impl eframe::App for Launcher {
             self.check_latest(&ctx);
         }
 
+        self.confirm_quit(&ctx);
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(28.0)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 if let Some(logo) = &self.logo {
@@ -416,6 +505,14 @@ impl eframe::App for Launcher {
                     );
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let updatable = self.updatable();
+                    if installs_here() && !updatable.is_empty() {
+                        let label = format!("Update all ({})", updatable.len());
+                        if ui.add(accent_button(ui, &label, LAUNCHER_ACCENT)).clicked() {
+                            self.request_install(&ctx, updatable);
+                        }
+                        ui.add_space(8.0);
+                    }
                     let refresh = egui::Button::new(egui::RichText::new("Refresh").size(14.0)).corner_radius(8.0).min_size(egui::vec2(0.0, 30.0));
                     if ui.add_enabled(!self.scanning, refresh).clicked() {
                         self.rescan(&ctx);

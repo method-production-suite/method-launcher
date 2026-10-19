@@ -39,11 +39,21 @@ fn check(app: &App, path: &Path) -> Option<Installed> {
     Some(Installed { path: path.to_path_buf(), version, legacy })
 }
 
+/// Bundle id first (docs/spec.md §4.6): Spotlight's bundles with the app's id, in the
+/// Applications folders and never under a `target/` build folder; then the usual names,
+/// current before earlier (which also finds an earlier bundle id); then, only when Spotlight
+/// can't answer, every bundle at the top of the Applications folders. The version is always
+/// the bundle's own.
 pub fn locate(app: &App) -> Option<Installed> {
     let dirs = application_dirs();
+    let usable = |p: &Path| dirs.iter().any(|d| p.starts_with(d)) && !p.components().any(|c| c.as_os_str() == "target");
+    let query = format!("kMDItemCFBundleIdentifier == \"{}\"", app.bundle_id);
+    let spotlight = output(MDFIND, &[&query]);
+    if let Some(found) = spotlight.as_deref().unwrap_or_default().lines().map(PathBuf::from).filter(|p| usable(p)).find_map(|p| check(app, &p)) {
+        return Some(found);
+    }
     let mut names = vec![app.name];
     names.extend(app.legacy.map(|l| l.name));
-    // The usual names first; current names before earlier ones.
     for name in &names {
         for dir in &dirs {
             if let Some(found) = check(app, &dir.join(format!("{name}.app"))) {
@@ -51,10 +61,15 @@ pub fn locate(app: &App) -> Option<Installed> {
             }
         }
     }
-    // Then anything Spotlight knows with this id, anywhere under the Applications folders.
-    let query = format!("kMDItemCFBundleIdentifier == \"{}\"", app.bundle_id);
-    let found = output(MDFIND, &[&query]).unwrap_or_default();
-    found.lines().map(PathBuf::from).filter(|p| dirs.iter().any(|d| p.starts_with(d))).find_map(|p| check(app, &p))
+    if spotlight.is_none() {
+        for dir in &dirs {
+            let bundles = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path());
+            if let Some(found) = bundles.filter(|p| p.extension().is_some_and(|x| x == "app")).find_map(|p| check(app, &p)) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 pub fn is_running(_app: &App, installed: &Installed) -> bool {

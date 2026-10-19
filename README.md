@@ -9,9 +9,8 @@ whichever system you use.
   checked before anything runs: on a Mac, signed by the suite's Developer ID, notarised and
   built for Apple silicon; on Windows and Linux, matched against the release's checksums. If
   a check fails, nothing is installed.
-- **Know when there's a new version.** On a Mac, each app updates itself and the launcher
-  opens it to do so; on Windows and Linux, the launcher installs the new version the same
-  careful way.
+- **Updates in one place.** The launcher shows which apps have a new version and installs
+  it the same careful way, one app or all of them, asking before it quits an open app.
 - **Your recent files, across the suite.** Scripts, schedules and budgets you opened lately,
   each opening in the app it belongs to.
 - **Field Station, ready to open.** Every app's invented sample production, one click away.

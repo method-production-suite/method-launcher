@@ -99,12 +99,12 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 ## M3: Updates, recent files, samples
 
-- **[partial] S** Read each release's `latest.json` and show "Update available" with Update
-  (spec §5.1). Have: at launch and on Refresh. Missing: the 6-hour schedule, the switch, and
-  Get version X on Windows and Linux.
+- **[partial] M** Updates run by the launcher (spec §5.1): "Update available", Update to X,
+  ask before quitting an open app, Update all. Have: all of it on macOS, checked at launch
+  and on Refresh. Missing: Windows and Linux (with their installs, M2), the 6-hour schedule
+  and the switch.
 - **[missing] S** Recent files across the apps (spec §6).
-- **[missing] S** Open Sample and Open to update through the launch arguments, with the
-  fallbacks.
+- **[missing] S** Open Sample through `--open-sample`, with the fallback.
 
 ## M4: Help, identity, its own updates
 

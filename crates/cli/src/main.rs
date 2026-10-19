@@ -100,7 +100,7 @@ fn install(args: &[String]) -> ExitCode {
         Stage::Downloading(_) => {}
         other => eprintln!("  {other:?}"),
     };
-    match launcher_sys::install_macos::install(app, &dest, current.as_ref(), &report) {
+    match launcher_sys::install_macos::install(app, &dest, current.as_ref(), false, &report) {
         Ok(found) => {
             println!("installed {} {} at {}", app.name, found.version, found.path.display());
             ExitCode::SUCCESS

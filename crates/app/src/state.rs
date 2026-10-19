@@ -70,6 +70,7 @@ pub fn status_line(app: &App, found: &Found, latest: &Latest, job: &Job) -> (Str
             Stage::Downloading(bytes) => format!("Downloading: {:.1} MB", *bytes as f64 / 1_000_000.0),
             Stage::Checking => "Checking the download".to_string(),
             Stage::Copying => "Copying to Applications".to_string(),
+            Stage::Quitting => format!("Waiting for {} to quit", app.name),
         };
         return (text, false);
     }

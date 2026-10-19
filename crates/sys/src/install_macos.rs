@@ -49,13 +49,19 @@ fn tool(program: &str, args: &[&str]) -> Result<(bool, String), String> {
 }
 
 /// Installs (or updates) `app` into `dest_dir`, reporting each stage. `current` is the copy
-/// already installed, if any, which this replaces.
-pub fn install(app: &App, dest_dir: &Path, current: Option<&Installed>, stage: &dyn Fn(Stage)) -> Result<Installed, InstallError> {
+/// already installed, if any, which this replaces. With `quit`, a running copy is asked to
+/// quit first (the person agreed to that on the card); without it, a running copy stops the
+/// update.
+pub fn install(app: &App, dest_dir: &Path, current: Option<&Installed>, quit: bool, stage: &dyn Fn(Stage)) -> Result<Installed, InstallError> {
     let system = System;
     if let Some(current) = current
         && system.is_running(app, current)
     {
-        return Err(fail(format!("Quit {} first, then try again.", app.name), "it is running"));
+        if !quit {
+            return Err(fail(format!("Quit {} first, then try again.", app.name), "it is running"));
+        }
+        stage(Stage::Quitting);
+        quit_app(app, current)?;
     }
     let file = app.installer(Kind::Dmg).ok_or_else(|| fail(format!("{} has no download yet.", app.name), "no release"))?;
 
@@ -108,6 +114,27 @@ pub fn install(app: &App, dest_dir: &Path, current: Option<&Installed>, stage: &
     });
     let _ = std::fs::remove_file(&dmg);
     result
+}
+
+/// Asks a running app to quit the way the Quit menu does, so it can ask about unsaved work,
+/// and waits up to two minutes for it. (macOS asks once whether Method Launcher may control
+/// the app.)
+fn quit_app(app: &App, current: &Installed) -> Result<(), InstallError> {
+    let id = info(&current.path, "CFBundleIdentifier").unwrap_or_else(|| app.bundle_id.to_string());
+    let script = format!("tell application id \"{}\" to quit", applescript_escape(&id));
+    let (ok, text) = tool(OSASCRIPT, &["-e", &script]).map_err(|e| fail(format!("{} couldn't be asked to quit.", app.name), e))?;
+    if !ok {
+        return Err(fail(format!("{} couldn't be asked to quit, so it wasn't updated. Quit it and try again.", app.name), text.trim().to_string()));
+    }
+    for _ in 0..240 {
+        if !System.is_running(app, current) {
+            // A moment for the app to finish writing its files.
+            std::thread::sleep(Duration::from_millis(500));
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Err(fail(format!("{} is still open, so it wasn't updated.", app.name), "it didn't quit within two minutes"))
 }
 
 fn hash_file(path: &Path) -> Result<String, String> {

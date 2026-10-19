@@ -42,8 +42,9 @@ samples, Help; the launcher's own updates (§5.2).
   reporting that sends anything on its own.
 - Never runs, opens or copies anything it downloaded before that download has passed every
   check for its system (§4).
-- Never updates an app without being asked: an update is a person pressing Update (§5.1),
-  and it goes through every check a new install does.
+- Never updates an app without being asked: an update is a person pressing Update or
+  Update all (§5.1), it goes through every check a new install does, and an open app is
+  asked before it is quit.
 - Never reads, moves or changes a person's documents. It reads only the apps' own recent-file
   lists (§6) and hands a file to its app to open.
 - Never asks for administrator rights unless the chosen install needs them (§4), and says why
@@ -93,7 +94,7 @@ label follows the app's state:
 | Checking | "Checking the download" | (none) | |
 | Installing | "Copying to Applications" (macOS), "The installer is open" (Windows), "Installing" (Linux) | (none) | |
 | Installed, current | "Version 0.4.0" | Open | Show location, Release notes, Open Sample |
-| Installed, update ready | "Version 0.4.0. Version 0.5.0 is ready." | Open to update | Open, Release notes, Show location |
+| Installed, update ready | "Version 0.4.0. Update available: 0.5.0" | Update to 0.5.0 | Open, Show location, Release notes |
 | Installed, check failed | "Version 0.4.0" and a quiet "Couldn't check for updates" | Open | Try again |
 | Install failed | one sentence saying what went wrong (§8) | Try again | Details |
 
@@ -274,30 +275,38 @@ and shown as installed.
 
 ## 5. Updates
 
-### 5.1 The suite's apps: detect only
+### 5.1 The suite's apps: the launcher installs the update
 
-- For each installed app, compare its installed version (§4.6) with the release manifest's
-  `version` (`releases/latest/download/latest.json`). Newer (semver) shows "Version X is
-  ready."
-- **On macOS** (the owner's call, 2026-10-19), **Update to X** installs the latest release
-  over the installed copy through the same download and checks as §4.2: the old copy is moved
-  aside, the new one renamed into place, and the old one removed only once that worked. An
-  app that is running is not replaced ("Quit Method Budget first"). An app installed under
-  its earlier name (Method Reader as Screepub Desktop) gets **Install X**, which installs it
-  under its current name and removes the earlier copy. Each app's own updater stays the
-  other way to update; the launcher never downloads an update archive.
-- **On Windows and Linux**, where the apps don't update themselves yet, the card offers
-  **Get version X**: the same download, verify and install path as §4 (the Windows installer
-  upgrades in place; the AppImage is replaced through its staging name; the .deb through
-  apt). When an app gains its own updater on that system, the launcher goes back to detect
-  only for it.
-- To make the macOS path immediate, the launcher opens the app with `--check-for-updates`
-  (SUITE-STANDARDS.md §2) when it isn't already running (§6). For an installed version older
-  than that rule, or an app that's already open, its card says "Choose Help > Check for
-  Updates in Method Budget."
-- Timing follows SUITE-STANDARDS.md §1: 2 minutes after launch, then every 6 hours while
-  open, and when the window comes forward if the last check is more than an hour old. The
-  Settings switch turns this off; Check for Updates... still works by hand.
+The owner's call (2026-10-19): "we should be able to directly download the apps and update
+the apps from the launcher." So the launcher updates the apps itself, on every system,
+macOS first; each app's own updater stays a second way.
+
+- For each installed app, compare its installed version (§4.6, read from the bundle,
+  registry entry or package) with the release manifest's `version`
+  (`releases/latest/download/latest.json`). Newer (semver) shows "Update available: X" and
+  the card's main button becomes **Update to X**.
+- **Update** downloads the latest release's installer and checks it exactly as an install
+  does (§4.1, and §4.2 to §4.4 for each system: on macOS the Developer ID of team
+  XSRB3D643J, notarisation, arm64 only and `SHA256SUMS` where the release has it), then
+  replaces the installed copy. On macOS the old bundle is moved aside, the new one renamed
+  into place, and the old one removed only once that worked. On Windows the setup upgrades
+  in place; on Linux the AppImage is replaced through its staging name, the `.deb` through
+  apt.
+- **An open app is asked first.** If the app is running, the launcher says "Method Budget is
+  open. Method Launcher will ask it to quit, so it can ask you about anything unsaved, then
+  update it." with **Quit and update** and **Cancel**. On macOS it asks the app to quit the
+  way its Quit menu does (macOS asks once whether Method Launcher may control it) and waits
+  up to two minutes; if the app is still open, nothing is replaced ("Method Budget is still
+  open, so it wasn't updated").
+- **An earlier name is replaced.** An app installed under its earlier name or file name
+  (Method Reader as Screepub Desktop) is installed under its current name, and the earlier
+  copy removed once the new one is in place.
+- **Update all** (beside Refresh, in the launcher's ochre) runs every pending update, one at a
+  time, with one question for all the apps that are open.
+- The launcher never downloads an app's update archive (its `.app.tar.gz`); it uses the same
+  installer a new install does.
+- Timing: the launcher checks at launch and on Refresh (⌘R). The 6-hour schedule and the
+  Settings switch of SUITE-STANDARDS.md §1 come with Settings.
 
 ### 5.2 The launcher itself
 

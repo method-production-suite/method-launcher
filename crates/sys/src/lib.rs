@@ -75,6 +75,8 @@ pub enum Stage {
     Checking,
     /// Copying into place.
     Copying,
+    /// Asking the running app to quit before it is replaced.
+    Quitting,
 }
 
 /// Why an install stopped: one plain sentence for the card, and the technical detail.
