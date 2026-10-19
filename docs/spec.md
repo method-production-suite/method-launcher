@@ -42,8 +42,8 @@ samples, Help; the launcher's own updates (§5.2).
   reporting that sends anything on its own.
 - Never runs, opens or copies anything it downloaded before that download has passed every
   check for its system (§4).
-- Never updates an installed app itself: each app updates itself (§5.1), so there is one
-  update path per app.
+- Never updates an app without being asked: an update is a person pressing Update (§5.1),
+  and it goes through every check a new install does.
 - Never reads, moves or changes a person's documents. It reads only the apps' own recent-file
   lists (§6) and hands a file to its app to open.
 - Never asks for administrator rights unless the chosen install needs them (§4), and says why
@@ -279,9 +279,13 @@ and shown as installed.
 - For each installed app, compare its installed version (§4.6) with the release manifest's
   `version` (`releases/latest/download/latest.json`). Newer (semver) shows "Version X is
   ready."
-- **On macOS**, Open to update opens the app; its own updater (method-update, or the
-  manifest's updater in Method Budget and Method Schedule) shows "Update ready, restart to
-  update". The launcher never downloads an update archive or replaces an installed app.
+- **On macOS** (the owner's call, 2026-10-19), **Update to X** installs the latest release
+  over the installed copy through the same download and checks as §4.2: the old copy is moved
+  aside, the new one renamed into place, and the old one removed only once that worked. An
+  app that is running is not replaced ("Quit Method Budget first"). An app installed under
+  its earlier name (Method Reader as Screepub Desktop) gets **Install X**, which installs it
+  under its current name and removes the earlier copy. Each app's own updater stays the
+  other way to update; the launcher never downloads an update archive.
 - **On Windows and Linux**, where the apps don't update themselves yet, the card offers
   **Get version X**: the same download, verify and install path as §4 (the Windows installer
   upgrades in place; the AppImage is replaced through its staging name; the .deb through

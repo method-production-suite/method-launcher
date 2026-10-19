@@ -3,7 +3,11 @@
 //! only tools that ship with it. What those tools print is read in [`parse`], tested
 //! everywhere.
 
+pub mod net;
 pub mod parse;
+
+#[cfg(target_os = "macos")]
+pub mod install_macos;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -60,7 +64,56 @@ impl Launch for System {
     }
 }
 
+/// Where an install is: shown on the app's card (docs/spec.md §3.1).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// Finding the latest release.
+    Finding,
+    /// Downloading, with the bytes so far.
+    Downloading(u64),
+    /// Checking the download.
+    Checking,
+    /// Copying into place.
+    Copying,
+}
+
+/// Why an install stopped: one plain sentence for the card, and the technical detail.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstallError {
+    pub message: String,
+    pub details: String,
+}
+
+impl InstallError {
+    pub fn new(message: impl Into<String>, details: impl Into<String>) -> Self {
+        InstallError { message: message.into(), details: details.into() }
+    }
+}
+
+impl std::fmt::Display for InstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.details.is_empty() { write!(f, "{}", self.message) } else { write!(f, "{} ({})", self.message, self.details) }
+    }
+}
+
 impl System {
+    /// A fresh path in the launcher's cache for a scratch or downloaded file.
+    pub fn scratch(&self, name: &str) -> Option<PathBuf> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = self.cache()?.join("downloads");
+        std::fs::create_dir_all(&dir).ok()?;
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        Some(dir.join(format!("{name}-{}-{n}", std::process::id())))
+    }
+
+    /// The version of an app's latest release, from its `latest.json` (spec §5.1).
+    pub fn latest_version(&self, app: &App) -> Result<String, String> {
+        let scratch = self.scratch(&format!("{}-latest.json", app.slug)).ok_or("no cache folder")?;
+        let json = net::fetch_text(&app.manifest_url(), &scratch).map_err(|e| e.to_string())?;
+        launcher_core::release::manifest_version(&json).ok_or_else(|| "the release's latest.json has no version".to_string())
+    }
+
     /// An installed app's own icon as PNG bytes, about 256 pixels, if this system can read it
     /// (macOS today: the bundle's `.icns`). Cached under the launcher's cache folder.
     pub fn app_icon(&self, app: &App, installed: &Installed) -> Option<Vec<u8>> {

@@ -9,5 +9,6 @@ pub mod checksums;
 pub mod macho;
 pub mod net;
 pub mod platform;
+pub mod release;
 pub mod verify;
 pub mod version;

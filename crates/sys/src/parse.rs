@@ -95,6 +95,19 @@ pub fn bundle_matches(id: &str, current: &str, legacy_suffix: Option<&str>) -> O
     }
 }
 
+/// The mount point in `hdiutil attach -plist` output: the `<string>` after the one
+/// `<key>mount-point</key>` (a disk image with one volume has exactly one).
+pub fn hdiutil_mount_point(plist: &str) -> Option<String> {
+    let mut points = plist.match_indices("<key>mount-point</key>").filter_map(|(at, key)| {
+        let rest = plist.get(at + key.len()..)?.trim_start();
+        let value = rest.strip_prefix("<string>")?;
+        let end = value.find("</string>")?;
+        value.get(..end).map(|v| v.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">"))
+    });
+    let first = points.next()?;
+    points.next().is_none().then_some(first)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +165,16 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Meth
         assert_eq!(find_on_path("method-budget-app", &path_var, ':', &[]), None);
         assert_eq!(find_on_path("method-schedule-app", &path_var, ':', &[".exe"]), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_the_mount_point() {
+        let one = "<dict><key>content-hint</key><string>Apple_HFS</string>\n<key>mount-point</key>\n\t<string>/private/tmp/dmg.Ab12/Method Schedule</string></dict>";
+        assert_eq!(hdiutil_mount_point(one).as_deref(), Some("/private/tmp/dmg.Ab12/Method Schedule"));
+        assert_eq!(hdiutil_mount_point("<key>mount-point</key><string>/a &amp; b</string>").as_deref(), Some("/a & b"));
+        assert_eq!(hdiutil_mount_point("<dict></dict>"), None);
+        let two = format!("{one}{one}");
+        assert_eq!(hdiutil_mount_point(&two), None);
     }
 
     #[test]

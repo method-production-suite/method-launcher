@@ -5,6 +5,7 @@
 
 use crate::Launcher;
 use egui_kittest::Harness;
+use launcher_core::catalog::APPS;
 use std::path::{Path, PathBuf};
 
 const SIZE: egui::Vec2 = egui::vec2(960.0, 640.0);
@@ -24,9 +25,9 @@ fn screens() {
             .with_max_steps(64)
             .build_eframe(|cc| Launcher::new(&cc.egui_ctx));
         // Wait for the search for installed apps, then draw.
-        for _ in 0..200 {
+        for _ in 0..500 {
             harness.run_steps(1);
-            if harness.state().scan.is_none() {
+            if !harness.state().scanning && harness.state().latest.iter().zip(APPS).all(|(l, a)| !a.released || *l != crate::state::Latest::Unknown) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));

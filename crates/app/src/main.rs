@@ -1,27 +1,38 @@
-//! Method Launcher's window (docs/spec.md §3): one card per suite app, showing whether it is
-//! installed here and at which version, with Open and Show in Finder for the ones that are.
-//! Installing arrives with milestone M2 (docs/ROADMAP.md); until then a card for an app that
-//! isn't installed links to its download page.
+//! Method Launcher's window (docs/spec.md §3): one card per suite app, with its icon, whether
+//! it is installed here and at which version, whether a newer release is out, and one main
+//! button: Open, Update, or Install. Installing and updating run the checked install of
+//! launcher-sys (spec §4) off the interface thread, one at a time.
 
-use launcher_core::catalog::{APPS, App};
-use launcher_core::platform::{Installed, Launch, Locate, Opened, Target};
-use launcher_sys::System;
-use std::sync::{Arc, mpsc};
+mod images;
+mod state;
 
 #[cfg(test)]
 mod screens;
+
+use images::{WINDOW_ICON, decode_png, mark_png};
+use launcher_core::catalog::{APPS, App};
+use launcher_core::platform::{Installed, Launch, Locate, Opened};
+use launcher_sys::{InstallError, Stage, System};
+use state::{Found, Job, Latest, Primary, primary, primary_label, status_line};
+use std::collections::{HashSet, VecDeque};
+#[cfg(target_os = "macos")]
+use std::path::PathBuf;
+use std::sync::{Arc, mpsc};
 
 const APP_NAME: &str = "Method Launcher";
 
 /// Wide enough for two cards side by side.
 const TWO_COLUMNS_FROM: f32 = 860.0;
 
+/// Text on an accent button in dark mode (the sites' `--accent-ink`).
+const DARK_INK: egui::Color32 = egui::Color32::from_rgb(0x11, 0x14, 0x17);
+
 fn main() -> eframe::Result<()> {
     if std::env::args().nth(1).as_deref() == Some("--version") {
         println!("method-launcher-app {} ({APP_NAME})", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([960.0, 640.0]).with_min_inner_size([720.0, 520.0]);
+    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([980.0, 680.0]).with_min_inner_size([720.0, 520.0]);
     if let Some(icon) = decode_png(WINDOW_ICON) {
         viewport =
             viewport.with_icon(Arc::new(egui::IconData { width: icon.width() as u32, height: icon.height() as u32, rgba: icon.as_raw().to_vec() }));
@@ -30,67 +41,35 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(Launcher::new(&cc.egui_ctx)))))
 }
 
-/// The launcher's own icon, drawn by scripts/make-icons.py.
-const WINDOW_ICON: &[u8] = include_bytes!("../../../packaging/icons/icon-256.png");
-
-/// Each app's mark (its site's touch icon), drawn when its own icon can't be read.
-fn mark_png(app: &App) -> &'static [u8] {
-    match app.slug {
-        "storyteller" => include_bytes!("../../../assets/apps/storyteller.png"),
-        "reader" => include_bytes!("../../../assets/apps/reader.png"),
-        "schedule" => include_bytes!("../../../assets/apps/schedule.png"),
-        _ => include_bytes!("../../../assets/apps/budget.png"),
-    }
-}
-
-/// A PNG as an image egui can draw; `None` if it isn't a PNG it can read.
-fn decode_png(bytes: &[u8]) -> Option<egui::ColorImage> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().ok()?;
-    let mut buffer = vec![0; reader.output_buffer_size()?];
-    let frame = reader.next_frame(&mut buffer).ok()?;
-    let pixels = buffer.get(..frame.buffer_size())?;
-    let rgba: Vec<u8> = match frame.color_type {
-        png::ColorType::Rgba => pixels.to_vec(),
-        png::ColorType::Rgb => pixels
-            .chunks_exact(3)
-            .flat_map(|p| match *p {
-                [r, g, b] => [r, g, b, 255],
-                _ => [0; 4],
-            })
-            .collect(),
-        png::ColorType::GrayscaleAlpha => pixels
-            .chunks_exact(2)
-            .flat_map(|p| match *p {
-                [g, a] => [g, g, g, a],
-                _ => [0; 4],
-            })
-            .collect(),
-        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::Indexed => return None,
-    };
-    let size = [frame.width as usize, frame.height as usize];
-    (rgba.len() == size[0] * size[1] * 4).then(|| egui::ColorImage::from_rgba_unmultiplied(size, &rgba))
-}
-
-/// What the launcher knows about one app on this computer.
-#[derive(Clone, Debug, PartialEq)]
-enum Found {
-    Looking,
-    Installed(Installed),
-    Missing,
-}
-
 /// One app as a search found it: where it is, and its own icon if it could be read.
 type Scanned = (Option<Installed>, Option<egui::ColorImage>);
 
+/// News from the worker threads.
+enum Event {
+    Scanned(Vec<Scanned>),
+    Latest(usize, Latest),
+    // Installs run from the launcher on macOS only, so far.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Stage(usize, Stage),
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Done(usize, Result<Installed, InstallError>),
+}
+
 struct Launcher {
     found: Vec<Found>,
-    scan: Option<mpsc::Receiver<Vec<Scanned>>>,
+    latest: Vec<Latest>,
+    jobs: Vec<Job>,
+    /// Installs waiting for the one running to finish (spec §3.1: one at a time).
+    queue: VecDeque<usize>,
+    scanning: bool,
+    send: mpsc::Sender<Event>,
+    receive: mpsc::Receiver<Event>,
     /// Each app's mark, and its own icon once found installed, ready to draw.
     marks: Vec<Option<egui::TextureHandle>>,
     icons: Vec<Option<egui::TextureHandle>>,
+    logo: Option<egui::TextureHandle>,
+    /// Cards whose failure details are open.
+    details: HashSet<usize>,
     /// One line about the last thing the person did, and whether it went wrong.
     notice: Option<(String, bool)>,
     focused: bool,
@@ -98,25 +77,44 @@ struct Launcher {
 
 impl Launcher {
     fn new(ctx: &egui::Context) -> Self {
-        let marks = APPS
-            .iter()
-            .map(|app| decode_png(mark_png(app)).map(|image| ctx.load_texture(format!("mark-{}", app.slug), image, egui::TextureOptions::LINEAR)))
-            .collect();
-        let mut launcher =
-            Launcher { found: vec![Found::Looking; APPS.len()], scan: None, marks, icons: vec![None; APPS.len()], notice: None, focused: true };
+        let texture = |name: String, png: &[u8]| decode_png(png).map(|image| ctx.load_texture(name, image, egui::TextureOptions::LINEAR));
+        let marks = APPS.iter().map(|app| texture(format!("mark-{}", app.slug), mark_png(app))).collect();
+        let (send, receive) = mpsc::channel();
+        let mut launcher = Launcher {
+            found: vec![Found::Looking; APPS.len()],
+            latest: vec![Latest::Unknown; APPS.len()],
+            jobs: vec![Job::Idle; APPS.len()],
+            queue: VecDeque::new(),
+            scanning: false,
+            send,
+            receive,
+            marks,
+            icons: vec![None; APPS.len()],
+            logo: texture("launcher".into(), WINDOW_ICON),
+            details: HashSet::new(),
+            notice: None,
+            focused: true,
+        };
+        #[cfg(target_os = "macos")]
+        {
+            // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
+            let dirs = vec![PathBuf::from("/Applications"), home().join("Applications")];
+            std::thread::spawn(move || launcher_sys::install_macos::clean_up(&dirs));
+        }
         launcher.rescan(ctx);
+        launcher.check_latest(ctx);
         launcher
     }
 
     /// Looks for the apps again, off the interface thread.
     fn rescan(&mut self, ctx: &egui::Context) {
-        if self.scan.is_some() {
+        if self.scanning {
             return;
         }
-        let (send, receive) = mpsc::channel();
-        let ctx = ctx.clone();
+        self.scanning = true;
+        let (send, ctx) = (self.send.clone(), ctx.clone());
         std::thread::spawn(move || {
-            let found: Vec<Scanned> = APPS
+            let found = APPS
                 .iter()
                 .map(|app| {
                     let installed = System.locate(app);
@@ -124,30 +122,99 @@ impl Launcher {
                     (installed, icon)
                 })
                 .collect();
-            let _ = send.send(found);
+            let _ = send.send(Event::Scanned(found));
             ctx.request_repaint();
         });
-        self.scan = Some(receive);
     }
 
-    fn take_scan(&mut self, ctx: &egui::Context) {
-        let Some(receive) = &self.scan else { return };
-        if let Ok(found) = receive.try_recv() {
-            self.icons = APPS
-                .iter()
-                .zip(&found)
-                .map(|(app, (_, icon))| icon.clone().map(|image| ctx.load_texture(format!("icon-{}", app.slug), image, egui::TextureOptions::LINEAR)))
-                .collect();
-            self.found = found.into_iter().map(|(f, _)| f.map_or(Found::Missing, Found::Installed)).collect();
-            self.scan = None;
+    /// Reads every released app's latest version (spec §5.1), each on its own thread.
+    fn check_latest(&mut self, ctx: &egui::Context) {
+        for (index, app) in APPS.iter().enumerate().filter(|(_, a)| a.released) {
+            let (send, ctx) = (self.send.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let latest = System.latest_version(app).map_or_else(Latest::Failed, Latest::Version);
+                let _ = send.send(Event::Latest(index, latest));
+                ctx.request_repaint();
+            });
         }
     }
 
-    fn report(&mut self, result: Result<String, String>) {
-        self.notice = Some(match result {
-            Ok(text) => (text, false),
-            Err(text) => (text, true),
+    fn take_events(&mut self, ctx: &egui::Context) {
+        while let Ok(event) = self.receive.try_recv() {
+            match event {
+                Event::Scanned(found) => {
+                    self.icons = APPS
+                        .iter()
+                        .zip(&found)
+                        .map(|(app, (_, icon))| {
+                            icon.clone().map(|image| ctx.load_texture(format!("icon-{}", app.slug), image, egui::TextureOptions::LINEAR))
+                        })
+                        .collect();
+                    self.found = found.into_iter().map(|(f, _)| f.map_or(Found::Missing, Found::Installed)).collect();
+                    self.scanning = false;
+                }
+                Event::Latest(index, latest) => set(&mut self.latest, index, latest),
+                Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
+                Event::Done(index, result) => {
+                    let app = APPS.get(index).map_or("The app", |a| a.name);
+                    match result {
+                        Ok(installed) => {
+                            set(&mut self.jobs, index, Job::Idle);
+                            self.notice = Some((format!("{app} {} is installed.", installed.version), false));
+                        }
+                        Err(error) => set(&mut self.jobs, index, Job::Failed(error)),
+                    }
+                    self.rescan(ctx);
+                    if let Some(next) = self.queue.pop_front() {
+                        self.start_install(ctx, next);
+                    }
+                }
+            }
+        }
+    }
+
+    fn busy(&self) -> bool {
+        self.jobs.iter().any(|j| matches!(j, Job::Running(_)))
+    }
+
+    /// Installs or updates the app at `index`, or queues it behind the one running.
+    fn install(&mut self, ctx: &egui::Context, index: usize) {
+        self.details.remove(&index);
+        if self.busy() {
+            set(&mut self.jobs, index, Job::Waiting);
+            self.queue.push_back(index);
+        } else {
+            self.start_install(ctx, index);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn start_install(&mut self, ctx: &egui::Context, index: usize) {
+        let Some(app) = APPS.get(index) else { return };
+        let current = match self.found.get(index) {
+            Some(Found::Installed(installed)) => Some(installed.clone()),
+            _ => None,
+        };
+        // An update goes where the installed copy is; a new install into /Applications.
+        let dest = current.as_ref().and_then(|c| c.path.parent().map(PathBuf::from)).unwrap_or_else(|| PathBuf::from("/Applications"));
+        set(&mut self.jobs, index, Job::Running(Stage::Finding));
+        let (send, ctx) = (self.send.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let report = |stage: Stage| {
+                let _ = send.send(Event::Stage(index, stage));
+                ctx.request_repaint();
+            };
+            let result = launcher_sys::install_macos::install(app, &dest, current.as_ref(), &report);
+            let _ = send.send(Event::Done(index, result));
+            ctx.request_repaint();
         });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn start_install(&mut self, _ctx: &egui::Context, index: usize) {
+        if let Some(app) = APPS.get(index) {
+            self.link(&app.releases_url());
+        }
     }
 
     fn open(&mut self, app: &App, installed: &Installed) {
@@ -156,81 +223,152 @@ impl Launcher {
             Opened::BroughtForward => format!("{} is already open.", app.name),
             Opened::AlreadyRunning => format!("{} is already open. Switch to it from the taskbar.", app.name),
         });
-        self.report(result.map_err(|e| format!("{} couldn't be opened. {e}", app.name)));
+        self.notice = Some(match result {
+            Ok(text) => (text, false),
+            Err(e) => (format!("{} couldn't be opened. {e}", app.name), true),
+        });
     }
 
     fn link(&mut self, url: &str) {
         if let Err(e) = System.open_url(url) {
-            self.report(Err(format!("The link couldn't be opened. {e}")));
+            self.notice = Some((format!("The link couldn't be opened. {e}"), true));
         }
     }
 
     fn card(&mut self, ui: &mut egui::Ui, index: usize, app: &App) {
-        let accent = colour(if ui.visuals().dark_mode { app.accent.1 } else { app.accent.0 });
-        let found = self.found.get(index).cloned().unwrap_or(Found::Looking);
+        let dark = ui.visuals().dark_mode;
+        let accent = colour(if dark { app.accent.1 } else { app.accent.0 });
+        let found = self.found.get(index).cloned().unwrap_or_default();
+        let latest = self.latest.get(index).cloned().unwrap_or_default();
+        let job = self.jobs.get(index).cloned().unwrap_or_default();
         let picture = self.icons.get(index).cloned().flatten().or_else(|| self.marks.get(index).cloned().flatten());
-        egui::Frame::group(ui.style()).inner_margin(12.0).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let size = egui::vec2(48.0, 48.0);
-                match &picture {
-                    Some(texture) => {
-                        ui.add(egui::Image::new((texture.id(), size)).corner_radius(10.0));
+        let (line, news) = status_line(app, &found, &latest, &job);
+        let main = primary(app, &found, &latest, &job);
+        let quiet = ui.visuals().weak_text_color();
+
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+            .corner_radius(14.0)
+            .inner_margin(20.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    let size = egui::vec2(60.0, 60.0);
+                    match &picture {
+                        Some(texture) => {
+                            ui.add(egui::Image::new((texture.id(), size)).corner_radius(13.0));
+                        }
+                        None => {
+                            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 13.0, accent);
+                        }
                     }
-                    None => {
-                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 10.0, accent);
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(app.name).size(21.0).strong());
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new(app.tagline).size(14.0));
+                    });
+                });
+                ui.add_space(14.0);
+                let line_colour = if news { accent } else { quiet };
+                ui.horizontal(|ui| {
+                    if matches!(job, Job::Running(_) | Job::Waiting) || matches!(found, Found::Looking) {
+                        ui.spinner();
+                    }
+                    ui.label(egui::RichText::new(line).size(15.0).color(line_colour));
+                });
+                if let Job::Failed(error) = &job {
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(&error.message).size(14.0).color(ui.visuals().error_fg_color));
+                    if !error.details.is_empty() {
+                        let open = self.details.contains(&index);
+                        if ui
+                            .add(
+                                egui::Button::new(egui::RichText::new(if open { "Hide details" } else { "Details" }).size(13.0).color(quiet))
+                                    .frame(false),
+                            )
+                            .clicked()
+                        {
+                            if open {
+                                self.details.remove(&index);
+                            } else {
+                                self.details.insert(index);
+                            }
+                        }
+                        if open {
+                            ui.add(egui::Label::new(egui::RichText::new(&error.details).size(12.0).monospace().color(quiet)).wrap());
+                        }
                     }
                 }
-                ui.vertical(|ui| {
-                    ui.heading(app.name);
-                    ui.label(app.tagline);
+                ui.add_space(14.0);
+                ui.horizontal_wrapped(|ui| {
+                    if main != Primary::None {
+                        let label = match (&job, &main) {
+                            (Job::Failed(_), Primary::Install { .. } | Primary::Update(_)) => "Try again".to_string(),
+                            _ => primary_label(app, &main),
+                        };
+                        let ink = if dark { DARK_INK } else { egui::Color32::WHITE };
+                        let button = egui::Button::new(egui::RichText::new(label).size(15.0).strong().color(ink))
+                            .fill(accent)
+                            .corner_radius(8.0)
+                            .min_size(egui::vec2(96.0, 34.0));
+                        if ui.add(button).clicked() {
+                            self.act(ui.ctx(), index, app, &found, &main);
+                        }
+                        ui.add_space(10.0);
+                    }
+                    let secondary = |ui: &mut egui::Ui, text: &str| {
+                        ui.add(egui::Button::new(egui::RichText::new(text).size(14.0).color(quiet)).frame(false))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                    };
+                    if let Found::Installed(installed) = &found {
+                        if main != Primary::Open && !matches!(job, Job::Running(_)) && secondary(ui, "Open") {
+                            self.open(app, installed);
+                        }
+                        if secondary(ui, SHOW_LOCATION)
+                            && let Err(e) = System.show_location(&installed.path)
+                        {
+                            self.notice = Some((format!("{} couldn't be shown. {e}", app.name), true));
+                        }
+                    }
+                    if app.released && secondary(ui, "Release notes") {
+                        self.link(&app.releases_url());
+                    }
+                    if main != Primary::VisitSite && !matches!(found, Found::Installed(_)) && secondary(ui, "Website") {
+                        self.link(app.site);
+                    }
                 });
             });
-            ui.add_space(6.0);
-            ui.weak(status_line(app, &found));
-            ui.add_space(6.0);
-            ui.horizontal_wrapped(|ui| match &found {
-                Found::Looking => {
-                    ui.spinner();
-                }
-                Found::Installed(installed) => {
-                    if ui.button("Open").clicked() {
-                        self.open(app, installed);
-                    }
-                    if ui.button(SHOW_LOCATION).clicked()
-                        && let Err(e) = System.show_location(&installed.path)
-                    {
-                        self.report(Err(format!("{} couldn't be shown. {e}", app.name)));
-                    }
-                    if app.released && ui.link("Release notes").clicked() {
-                        self.link(&app.releases_url());
-                    }
-                }
-                Found::Missing if !app.released => {
-                    if ui.button("Visit the site").clicked() {
-                        self.link(app.site);
-                    }
-                }
-                Found::Missing if !buildable_here() => {
-                    if ui.button("Build from source").clicked() {
-                        self.link(&app.source_url());
-                    }
-                    if ui.link("Visit the site").clicked() {
-                        self.link(app.site);
-                    }
-                }
-                Found::Missing => {
-                    if ui.button("Download page").clicked() {
-                        self.link(&app.releases_url());
-                    }
-                    if ui.link("Visit the site").clicked() {
-                        self.link(app.site);
-                    }
-                }
-            });
-        });
     }
+
+    fn act(&mut self, ctx: &egui::Context, index: usize, app: &App, found: &Found, main: &Primary) {
+        match main {
+            Primary::Open => {
+                if let Found::Installed(installed) = found {
+                    self.open(app, installed);
+                }
+            }
+            Primary::Update(_) | Primary::Install { .. } => self.install(ctx, index),
+            Primary::VisitSite => self.link(app.site),
+            Primary::BuildFromSource => self.link(&app.source_url()),
+            Primary::DownloadPage => self.link(&app.releases_url()),
+            Primary::None => {}
+        }
+    }
+}
+
+fn set<T>(list: &mut [T], index: usize, value: T) {
+    if let Some(slot) = list.get_mut(index) {
+        *slot = value;
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn home() -> PathBuf {
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
 #[cfg(target_os = "macos")]
@@ -239,28 +377,6 @@ const SHOW_LOCATION: &str = "Show in Finder";
 const SHOW_LOCATION: &str = "Show in Explorer";
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const SHOW_LOCATION: &str = "Show in Files";
-
-/// Whether the suite publishes app builds for this system (not yet for Linux on ARM).
-fn buildable_here() -> bool {
-    Target::current().is_some_and(|t| !t.kinds().is_empty())
-}
-
-/// The quiet line under an app's name.
-fn status_line(app: &App, found: &Found) -> String {
-    match found {
-        Found::Looking => "Looking for it on this computer".to_string(),
-        Found::Installed(installed) => {
-            let version = if installed.version.is_empty() { "Installed".to_string() } else { format!("Version {}", installed.version) };
-            match (installed.legacy, app.legacy) {
-                (true, Some(legacy)) => format!("{version}, installed as {}", legacy.name),
-                _ => version,
-            }
-        }
-        Found::Missing if !app.released => "In development. No download yet.".to_string(),
-        Found::Missing if !buildable_here() => format!("There's no {} for this system yet. You can build it from source.", app.name),
-        Found::Missing => "Not installed".to_string(),
-    }
-}
 
 /// `#RRGGBB` to a colour; grey for anything else (the catalog's tests keep that from happening).
 fn colour(hex: &str) -> egui::Color32 {
@@ -274,7 +390,7 @@ fn colour(hex: &str) -> egui::Color32 {
 impl eframe::App for Launcher {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.take_scan(&ctx);
+        self.take_events(&ctx);
         // Look again when the window comes forward: an app may have been installed meanwhile.
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         if focused && !self.focused {
@@ -283,27 +399,36 @@ impl eframe::App for Launcher {
         self.focused = focused;
         if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R))) {
             self.rescan(&ctx);
+            self.check_latest(&ctx);
         }
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.add_space(8.0);
+        egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(28.0)).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Install the apps you want. Each one updates itself.");
+                if let Some(logo) = &self.logo {
+                    ui.add(egui::Image::new((logo.id(), egui::vec2(40.0, 40.0))));
+                }
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new(APP_NAME).size(24.0).strong());
+                    ui.label(
+                        egui::RichText::new("Install the apps you want. Each one keeps itself up to date.")
+                            .size(14.0)
+                            .color(ui.visuals().weak_text_color()),
+                    );
+                });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add_enabled(self.scan.is_none(), egui::Button::new("Refresh")).clicked() {
+                    let refresh = egui::Button::new(egui::RichText::new("Refresh").size(14.0)).corner_radius(8.0).min_size(egui::vec2(0.0, 30.0));
+                    if ui.add_enabled(!self.scanning, refresh).clicked() {
                         self.rescan(&ctx);
+                        self.check_latest(&ctx);
                     }
                 });
             });
             if let Some((text, error)) = &self.notice {
-                ui.add_space(4.0);
-                if *error {
-                    ui.colored_label(ui.visuals().error_fg_color, text);
-                } else {
-                    ui.label(text);
-                }
+                ui.add_space(10.0);
+                let colour = if *error { ui.visuals().error_fg_color } else { ui.visuals().text_color() };
+                ui.label(egui::RichText::new(text).size(14.0).color(colour));
             }
-            ui.add_space(8.0);
+            ui.add_space(20.0);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let columns = if ui.available_width() >= TWO_COLUMNS_FROM { 2 } else { 1 };
                 for (row, chunk) in APPS.chunks(columns).enumerate() {
@@ -312,7 +437,7 @@ impl eframe::App for Launcher {
                             self.card(ui, row * columns + col, app);
                         }
                     });
-                    ui.add_space(8.0);
+                    ui.add_space(16.0);
                 }
             });
         });
@@ -322,24 +447,10 @@ impl eframe::App for Launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use launcher_core::catalog::by_slug;
-    use std::path::PathBuf;
 
     #[test]
     fn colours_parse() {
         assert_eq!(colour("#0E7468"), egui::Color32::from_rgb(0x0E, 0x74, 0x68));
         assert_eq!(colour("nope"), egui::Color32::GRAY);
-    }
-
-    #[test]
-    fn status_lines_say_what_is_installed() {
-        let reader = by_slug("reader").unwrap();
-        let legacy =
-            Found::Installed(Installed { path: PathBuf::from("/Applications/Screepub Desktop.app"), version: "0.12.1".into(), legacy: true });
-        assert_eq!(status_line(reader, &legacy), "Version 0.12.1, installed as Screepub Desktop");
-        let budget = by_slug("budget").unwrap();
-        let unknown = Found::Installed(Installed { path: PathBuf::from("x"), version: String::new(), legacy: false });
-        assert_eq!(status_line(budget, &unknown), "Installed");
-        assert_eq!(status_line(by_slug("storyteller").unwrap(), &Found::Missing), "In development. No download yet.");
     }
 }

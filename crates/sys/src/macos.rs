@@ -23,7 +23,7 @@ fn application_dirs() -> Vec<PathBuf> {
 }
 
 /// One key of a bundle's `Info.plist`, XML or binary, read with `plutil`.
-fn info(bundle: &Path, key: &str) -> Option<String> {
+pub(crate) fn info(bundle: &Path, key: &str) -> Option<String> {
     let plist = bundle.join("Contents/Info.plist");
     output(PLUTIL, &["-extract", key, "raw", "-o", "-", &plist.to_string_lossy()]).map(|s| s.trim().to_string())
 }

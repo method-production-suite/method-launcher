@@ -79,27 +79,29 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 ## M2: Install
 
-- **[partial] S** Release pinning, checksums and hashing (spec §4.1). Have: `SHA256SUMS`
-  parsing and the SHA-256 check.
-- **[partial] S** Mach-O reader: every executable is arm64 only (spec §4.4 step 4). Have:
-  the header check for thin and fat files.
-- **[missing] M** Download with the redirect allow-list, limits, cancel and progress (spec
-  §4.2).
-- **[missing] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
-  notarisation, arm64, links) and copy with staging and rename (spec §4.2).
-- **[missing] S** macOS: administrator prompt and the `~/Applications` choice.
+- **[have] S** Release pinning, checksums and hashing (spec §4.1).
+- **[have] S** Mach-O reader: every executable is arm64 only.
+- **[partial] M** Download with the redirect allow-list, limits and progress, through the
+  system's `curl` (spec §4.1). Cancel is missing.
+- **[have] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
+  notarisation, arm64, links) and copy with staging and rename (spec §4.2); updates over
+  the installed copy, and replacing an earlier-named copy.
+- **[partial] S** macOS: administrator prompt (built, not yet tried) and the
+  `~/Applications` choice (missing).
 - **[missing] S** Windows: run the setup per user and confirm (spec §4.3); Authenticode once
   the suite signs Windows builds.
 - **[missing] M** Linux: AppImage with desktop entry; `.deb` through pkexec and apt; the ARM
   message (spec §4.4).
 - **[missing] S** Every failure case in spec §8, with a test each; leftover cleanup at
   launch.
-- **[missing] S** `method-launcher verify <app>` and `install <slug> --to <folder>`.
+- **[have] S** `method-launcher verify <app> <path>`, `install <app> --to <folder>` and
+  `latest` (macOS).
 
 ## M3: Updates, recent files, samples
 
-- **[missing] S** Read each release's `latest.json` and show "Version X is ready" (spec
-  §5.1), on the standard schedule with the switch; Get version X on Windows and Linux.
+- **[partial] S** Read each release's `latest.json` and show "Update available" with Update
+  (spec §5.1). Have: at launch and on Refresh. Missing: the 6-hour schedule, the switch, and
+  Get version X on Windows and Linux.
 - **[missing] S** Recent files across the apps (spec §6).
 - **[missing] S** Open Sample and Open to update through the launch arguments, with the
   fallbacks.
@@ -108,7 +110,8 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 - **[missing] S** Help menu (SUITE-STANDARDS.md §4), About, Licenses and Notices, Report a
   Bug.
-- **[missing] S** The mark, wordmark and app icon in the chosen accent (BRAND.md rules).
+- **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
+  (scripts/make-icons.py). Missing: the wordmark.
 - **[missing] M** Its own updates: `method-update` on macOS, with a key in 1Password; on
   Windows and Linux, "Version X is ready" with a link to the download (spec §5.2).
 

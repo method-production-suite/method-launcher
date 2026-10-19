@@ -7,7 +7,9 @@ use launcher_core::platform::{Locate, Target};
 use launcher_sys::System;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: method-launcher <list|status|--version|--help>";
+const USAGE: &str = "usage: method-launcher <list|status|latest|--version|--help>
+       method-launcher install <app> [--to <folder>]   (macOS: install or update from the latest release)
+       method-launcher verify <app> <path.app>          (macOS: the checks an install makes)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -37,6 +39,17 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("latest") => {
+            for app in APPS.iter().filter(|a| a.released) {
+                match System.latest_version(app) {
+                    Ok(version) => println!("{:<12} {version}", app.slug),
+                    Err(e) => println!("{:<12} couldn't check: {e}", app.slug),
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Some("install") => install(args.get(1..).unwrap_or_default()),
+        Some("verify") => verify(args.get(1..).unwrap_or_default()),
         Some("--help" | "-h") | None => {
             println!("{USAGE}");
             ExitCode::SUCCESS
@@ -58,4 +71,74 @@ fn downloads(app: &App) -> String {
     } else {
         installers.join(", ")
     }
+}
+
+/// `install <app> [--to <folder>]`: the window's Install and Update, without a window.
+#[cfg(target_os = "macos")]
+fn install(args: &[String]) -> ExitCode {
+    use launcher_sys::Stage;
+    let Some(app) = args.first().and_then(|slug| launcher_core::catalog::by_slug(slug)) else {
+        eprintln!("method-launcher install: name an app: storyteller, reader, schedule or budget");
+        return ExitCode::FAILURE;
+    };
+    let dest = match args.get(1..) {
+        Some([flag, folder]) if flag == "--to" => std::path::PathBuf::from(folder),
+        Some([]) => std::path::PathBuf::from("/Applications"),
+        _ => {
+            eprintln!("{USAGE}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // Replace the installed copy only when installing into the folder it is in.
+    let current = System.locate(app).filter(|found| found.path.parent() == Some(dest.as_path()));
+    let last = std::cell::Cell::new(0u64);
+    let report = |stage: Stage| match stage {
+        Stage::Downloading(bytes) if bytes / 10_000_000 != last.get() / 10_000_000 => {
+            last.set(bytes);
+            eprintln!("  downloading: {} MB", bytes / 1_000_000);
+        }
+        Stage::Downloading(_) => {}
+        other => eprintln!("  {other:?}"),
+    };
+    match launcher_sys::install_macos::install(app, &dest, current.as_ref(), &report) {
+        Ok(found) => {
+            println!("installed {} {} at {}", app.name, found.version, found.path.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("method-launcher: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn install(_args: &[String]) -> ExitCode {
+    eprintln!("method-launcher install: installing from here comes to this system later; use the app's download page for now");
+    ExitCode::FAILURE
+}
+
+/// `verify <app> <path.app>`: the checks an install makes on a bundle (spec §4.2 step 2).
+#[cfg(target_os = "macos")]
+fn verify(args: &[String]) -> ExitCode {
+    let (Some(app), Some(path)) = (args.first().and_then(|slug| launcher_core::catalog::by_slug(slug)), args.get(1)) else {
+        eprintln!("{USAGE}");
+        return ExitCode::FAILURE;
+    };
+    match launcher_sys::install_macos::verify_bundle(app, std::path::Path::new(path)) {
+        Ok(()) => {
+            println!("verified: {path} is signed by the suite, notarised and built for Apple silicon only");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("method-launcher: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn verify(_args: &[String]) -> ExitCode {
+    eprintln!("method-launcher verify: macOS only for now");
+    ExitCode::FAILURE
 }
