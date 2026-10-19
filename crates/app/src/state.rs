@@ -17,22 +17,44 @@ pub enum Found {
     Missing,
 }
 
-/// The latest release, as far as the launcher knows.
+/// The latest release, as far as the launcher knows, asked of the app's repository at run
+/// time (spec §5.1).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Latest {
     #[default]
     Unknown,
+    /// A published release with an installer for this system.
     Release(Release),
+    /// A published release with no installer for this system.
+    NoInstaller(Release),
+    /// No published release yet.
+    NoRelease,
     Failed(String),
 }
 
 impl Latest {
     fn release(&self) -> Option<&Release> {
         match self {
-            Latest::Release(r) => Some(r),
+            Latest::Release(r) | Latest::NoInstaller(r) => Some(r),
             _ => None,
         }
     }
+}
+
+/// Whether the app has a published release: what its repository said, or the catalog's
+/// fallback when it couldn't be asked.
+pub fn released(app: &App, latest: &Latest) -> bool {
+    match latest {
+        Latest::Release(_) | Latest::NoInstaller(_) => true,
+        Latest::NoRelease => false,
+        Latest::Unknown | Latest::Failed(_) => app.released,
+    }
+}
+
+/// Whether this system can install the app: the suite builds for it, and the latest
+/// release (when known) lists an installer for it.
+fn installable_here(latest: &Latest) -> bool {
+    buildable_here() && !matches!(latest, Latest::NoInstaller(_))
 }
 
 /// An install or update in progress, or how the last one ended.
@@ -100,7 +122,7 @@ fn buildable_here() -> bool {
     Target::current().is_some_and(|t| !t.kinds().is_empty())
 }
 
-fn released(release: &Release) -> String {
+fn released_on(release: &Release) -> String {
     match release.date {
         Some(date) => format!("Released {}.", short_date(date)),
         None => String::new(),
@@ -141,7 +163,7 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
                 Some(r) if is_newer(&r.version, &installed.version) => Status {
                     line: version,
                     badge: Some(Badge::Behind(r.version.clone())),
-                    detail: joined(&[&earlier, &released(r), r.summary.as_deref().unwrap_or("")]),
+                    detail: joined(&[&earlier, &released_on(r), r.summary.as_deref().unwrap_or("")]),
                     busy: false,
                 },
                 Some(_) => Status { line: version, badge: Some(Badge::UpToDate), detail: joined(&[&earlier]), busy: false },
@@ -151,10 +173,10 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
                 None => Status { line: version, badge: None, detail: joined(&[&earlier]), busy: false },
             }
         }
-        Found::Missing if !app.released => {
+        Found::Missing if !released(app, latest) => {
             Status { line: "No download yet".to_string(), badge: Some(Badge::InDevelopment), detail: None, busy: false }
         }
-        Found::Missing if !buildable_here() => Status {
+        Found::Missing if !installable_here(latest) => Status {
             line: "Not built for this system yet".to_string(),
             badge: None,
             detail: Some("You can build it from source.".to_string()),
@@ -164,7 +186,7 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
             Some(r) => Status {
                 line: "Not installed".to_string(),
                 badge: None,
-                detail: joined(&[&format!("Version {}.", r.version), &released(r), r.summary.as_deref().unwrap_or("")]),
+                detail: joined(&[&format!("Version {}.", r.version), &released_on(r), r.summary.as_deref().unwrap_or("")]),
                 busy: false,
             },
             None => plain("Not installed".to_string()),
@@ -181,12 +203,14 @@ pub fn primary(app: &App, found: &Found, latest: &Latest, job: &Job) -> Primary 
     match found {
         Found::Looking => Primary::None,
         Found::Installed(installed) => match &version {
-            Some(v) if installs_here() && installed.legacy => Primary::Install { version: Some(v.clone()), replacing: app.legacy.map(|l| l.name) },
-            Some(v) if installs_here() && is_newer(v, &installed.version) => Primary::Update(v.clone()),
+            Some(v) if installs_here() && installable_here(latest) && installed.legacy => {
+                Primary::Install { version: Some(v.clone()), replacing: app.legacy.map(|l| l.name) }
+            }
+            Some(v) if installs_here() && installable_here(latest) && is_newer(v, &installed.version) => Primary::Update(v.clone()),
             _ => Primary::Open,
         },
-        Found::Missing if !app.released => Primary::VisitSite,
-        Found::Missing if !buildable_here() => Primary::BuildFromSource,
+        Found::Missing if !released(app, latest) => Primary::VisitSite,
+        Found::Missing if !installable_here(latest) => Primary::BuildFromSource,
         Found::Missing if installs_here() => Primary::Install { version, replacing: None },
         Found::Missing => Primary::DownloadPage,
     }
@@ -249,10 +273,11 @@ mod tests {
 
     #[test]
     fn in_development_is_a_tag_and_a_quiet_link() {
+        // An app whose repository has no release yet.
         let storyteller = by_slug("storyteller").unwrap();
-        let s = status(storyteller, &Found::Missing, &Latest::Unknown, &Job::Idle);
+        let s = status(storyteller, &Found::Missing, &Latest::NoRelease, &Job::Idle);
         assert_eq!((s.line.as_str(), s.badge), ("No download yet", Some(Badge::InDevelopment)));
-        let main = primary(storyteller, &Found::Missing, &Latest::Unknown, &Job::Idle);
+        let main = primary(storyteller, &Found::Missing, &Latest::NoRelease, &Job::Idle);
         assert_eq!(main, Primary::VisitSite);
         assert!(!main.filled());
     }
@@ -277,6 +302,31 @@ mod tests {
         assert_eq!((s.line.as_str(), s.busy), ("Downloading, 12.3 MB", true));
         assert_eq!(primary(schedule, &Found::Missing, &release("0.1.0"), &job), Primary::None);
         assert_eq!(primary(schedule, &Found::Missing, &release("0.1.0"), &Job::Waiting), Primary::None);
+    }
+
+    #[test]
+    fn a_first_release_shows_up_at_run_time() {
+        // Built in as unreleased, but its repository now has a release: installable.
+        let new_app = launcher_core::catalog::App { released: false, ..*by_slug("storyteller").unwrap() };
+        assert!(!released(&new_app, &Latest::Unknown));
+        assert!(released(&new_app, &release("0.2.0")));
+        if installs_here() {
+            assert_eq!(
+                primary(&new_app, &Found::Missing, &release("0.2.0"), &Job::Idle),
+                Primary::Install { version: Some("0.2.0".into()), replacing: None }
+            );
+        }
+        // Built in as released, but the repository says it has none: the site, not Install.
+        let budget = by_slug("budget").unwrap();
+        assert_eq!(primary(budget, &Found::Missing, &Latest::NoRelease, &Job::Idle), Primary::VisitSite);
+    }
+
+    #[test]
+    fn a_release_without_this_systems_installer_offers_no_install() {
+        let schedule = by_slug("schedule").unwrap();
+        let latest = Latest::NoInstaller(Release { version: "0.2.0".into(), date: None, summary: None });
+        assert_eq!(primary(schedule, &Found::Missing, &latest, &Job::Idle), Primary::BuildFromSource);
+        assert_eq!(primary(schedule, &installed("0.1.0", false), &latest, &Job::Idle), Primary::Open);
     }
 
     #[test]

@@ -118,11 +118,47 @@ impl System {
         Ok(tag.trim_start_matches('v').to_string())
     }
 
-    /// An app's latest release, from its `latest.json` (spec §5.1): version, date, what's new.
-    pub fn latest_release(&self, app: &App) -> Result<launcher_core::release::Release, String> {
-        let scratch = self.scratch(&format!("{}-latest.json", app.slug)).ok_or("no cache folder")?;
-        let json = net::fetch_text(&app.manifest_url(), &scratch).map_err(|e| e.to_string())?;
-        launcher_core::release::manifest(&json).ok_or_else(|| "the release's latest.json has no version".to_string())
+    /// An app's latest published release (spec §5.1), decided at run time: `Ok(None)` when it
+    /// has none yet (its `releases/latest` answers 404). The version is the tag's; the date and
+    /// the line of what's new come from its `latest.json` when it has one. The flag says
+    /// whether the release offers an installer for this system: false only when its
+    /// `SHA256SUMS`, which lists every file, lacks one (or the suite builds none here).
+    pub fn latest_release(&self, app: &App) -> Result<Option<(launcher_core::release::Release, bool)>, String> {
+        use launcher_core::release::{Release, manifest, tag_from_location};
+        let scratch = |name: &str| self.scratch(&format!("{}-{name}", app.slug)).ok_or("no cache folder");
+        let location = match net::redirect_of(&app.latest_url(), &scratch("redirect")?) {
+            Ok(location) => location,
+            Err(net::NetError::NotFound) => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+        let tag = tag_from_location(&location).ok_or("the latest release has no version tag")?;
+        let version = tag.trim_start_matches('v').to_string();
+        let mut release = Release { version: version.clone(), date: None, summary: None };
+        if let Ok(json) = net::fetch_text(&app.asset_url(&tag, "latest.json"), &scratch("latest.json")?)
+            && let Some(found) = manifest(&json)
+            && found.version == version
+        {
+            release = found;
+        }
+        let kinds = launcher_core::platform::Target::current().map(|t| t.kinds()).unwrap_or_default();
+        // Every checksum file is read: an older release lists its installers in a second one.
+        let (mut listed, mut any_list) = (false, false);
+        for name in launcher_core::checksums::FILES {
+            if let Ok(sums) = net::fetch_text(&app.asset_url(&tag, name), &scratch(name)?) {
+                any_list = true;
+                listed |= kinds.iter().filter_map(|&k| app.installer(k)).any(|file| launcher_core::checksums::lookup(&sums, &file).is_some());
+            }
+        }
+        let has_installer = !kinds.is_empty() && (listed || !any_list);
+        Ok(Some((release, has_installer)))
+    }
+
+    /// The suite's list of apps from its website (spec §9), checked; `None` when it can't be
+    /// read or fails any check, and the launcher keeps the list it has.
+    pub fn website_catalog(&self) -> Option<(String, Vec<App>)> {
+        let json = net::fetch_text(launcher_core::catalog::CATALOG_URL, &self.scratch("apps.json")?).ok()?;
+        let apps = launcher_core::catalog::parse_remote(&json)?;
+        Some((json, apps))
     }
 
     /// An installed app's own icon as PNG bytes, about 256 pixels, if this system can read it

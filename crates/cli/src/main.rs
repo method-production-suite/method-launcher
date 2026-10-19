@@ -2,12 +2,12 @@
 //! (docs/spec.md §12). `list` shows the catalog and what this system can install; `status`
 //! shows which apps are installed here, where, and at which version.
 
-use launcher_core::catalog::{APPS, App};
+use launcher_core::catalog::{App, apps};
 use launcher_core::platform::{Locate, Target};
 use launcher_sys::System;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: method-launcher <list|status|latest|--version|--help>
+const USAGE: &str = "usage: method-launcher <list|catalog|status|latest|--version|--help>
        method-launcher install <app> [--to <folder>]   (macOS: install or update from the latest release)
        method-launcher verify <app> <path.app>          (macOS: the checks an install makes)";
 
@@ -18,15 +18,30 @@ fn main() -> ExitCode {
             println!("method-launcher {} (Method Launcher)", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
+        Some("catalog") => {
+            // The website's list, as the window reads it (spec §9).
+            match System.website_catalog() {
+                Some((_, apps)) => {
+                    for app in &apps {
+                        println!("{:<12} {:<20} {:<32} {}", app.slug, app.name, app.bundle_id, app.repo);
+                    }
+                    ExitCode::SUCCESS
+                }
+                None => {
+                    eprintln!("method-launcher: the website's list couldn't be read or didn't pass its checks; the built-in list is used");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("list") => {
-            for app in &APPS {
+            for app in apps() {
                 println!("{:<12} {:<20} {:<32} {}", app.slug, app.name, app.bundle_id, downloads(app));
             }
             ExitCode::SUCCESS
         }
         Some("status") => {
             let system = System;
-            for app in &APPS {
+            for app in apps() {
                 let state = match system.locate(app) {
                     Some(found) => {
                         let version = if found.version.is_empty() { "version unknown".to_string() } else { found.version };
@@ -40,12 +55,14 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("latest") => {
-            for app in APPS.iter().filter(|a| a.released) {
+            for app in apps() {
                 match System.latest_release(app) {
-                    Ok(release) => {
+                    Ok(Some((release, has_installer))) => {
                         let date = release.date.map(launcher_core::release::short_date).unwrap_or_default();
-                        println!("{:<12} {:<8} {date:<12} {}", app.slug, release.version, release.summary.unwrap_or_default());
+                        let here = if has_installer { "" } else { " (no installer for this system)" };
+                        println!("{:<12} {:<8} {date:<12} {}{here}", app.slug, release.version, release.summary.unwrap_or_default());
                     }
+                    Ok(None) => println!("{:<12} no release yet", app.slug),
                     Err(e) => println!("{:<12} couldn't check: {e}", app.slug),
                 }
             }

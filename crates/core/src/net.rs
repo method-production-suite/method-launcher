@@ -1,9 +1,10 @@
-//! The only hosts the launcher reaches, for manifests and downloads (docs/spec.md §4.2, §9):
-//! GitHub, and the hosts GitHub redirects release downloads to (the same two `method-update`
-//! allows). https only.
+//! The only hosts the launcher reaches (docs/spec.md §4.2, §9): GitHub and the hosts GitHub
+//! redirects release downloads to (the same two `method-update` allows), for releases; and
+//! the suite's own site, for its list of apps. https only.
 
-/// Hosts a request may start at or be redirected to.
-pub const ALLOWED_HOSTS: [&str; 3] = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
+/// Hosts a request may start at or be redirected to: GitHub for releases, and the suite's
+/// own site for its list of apps.
+pub const ALLOWED_HOSTS: [&str; 4] = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "methodproduction.com"];
 
 /// The host of an `https://` URL, lowercased; `None` for anything else, or for a URL with
 /// credentials or a port.
@@ -37,5 +38,7 @@ mod tests {
         assert!(!is_allowed("https://github.com:8443/x"));
         assert!(!is_allowed("file:///Applications"));
         assert!(!is_allowed("https:///x"));
+        assert!(is_allowed("https://methodproduction.com/apps.json"));
+        assert!(!is_allowed("https://methodproduction.com.example.net/apps.json"));
     }
 }

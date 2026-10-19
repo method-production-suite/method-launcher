@@ -10,13 +10,15 @@ pub const WINDOW_ICON: &[u8] = include_bytes!("../../../packaging/icons/icon-256
 pub const WORDMARK: &[u8] = include_bytes!("../../../assets/brand/wordmark.png");
 pub const WORDMARK_DARK: &[u8] = include_bytes!("../../../assets/brand/wordmark-dark.png");
 
-/// Each app's mark (its site's touch icon), drawn when its own icon can't be read.
-pub fn mark_png(app: &App) -> &'static [u8] {
+/// Each app's mark (its site's touch icon), drawn when its own icon can't be read; `None` for
+/// an app this launcher has no mark for (one added to the suite after it was built).
+pub fn mark_png(app: &App) -> Option<&'static [u8]> {
     match app.slug {
-        "storyteller" => include_bytes!("../../../assets/apps/storyteller.png"),
-        "reader" => include_bytes!("../../../assets/apps/reader.png"),
-        "schedule" => include_bytes!("../../../assets/apps/schedule.png"),
-        _ => include_bytes!("../../../assets/apps/budget.png"),
+        "storyteller" => Some(include_bytes!("../../../assets/apps/storyteller.png")),
+        "reader" => Some(include_bytes!("../../../assets/apps/reader.png")),
+        "schedule" => Some(include_bytes!("../../../assets/apps/schedule.png")),
+        "budget" => Some(include_bytes!("../../../assets/apps/budget.png")),
+        _ => None,
     }
 }
 
@@ -104,8 +106,8 @@ mod tests {
 
     #[test]
     fn decodes_the_bundled_pictures() {
-        for app in &launcher_core::catalog::APPS {
-            assert!(decode_png(mark_png(app)).is_some(), "{}", app.slug);
+        for app in launcher_core::catalog::BUILT_IN.iter() {
+            assert!(mark_png(app).and_then(decode_png).is_some(), "{}", app.slug);
         }
         for png in [WINDOW_ICON, WORDMARK, WORDMARK_DARK] {
             assert!(decode_png(png).is_some());
