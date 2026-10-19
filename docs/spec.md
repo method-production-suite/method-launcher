@@ -1,13 +1,12 @@
 # Method Launcher: specification
 
-Method Launcher (working name) is one small app, on macOS, Windows and Linux, that is the
+Method Launcher is one small app, on macOS, Windows and Linux, that is the
 front door to the Method Production Suite. It shows the suite's apps, installs the ones you
 want, tells you when an update is ready, opens them, and opens your recent files in the right
 app. One download instead of four, on whichever system you use.
 
-Status: draft for the first version. The product name and accent are open
-([ROADMAP.md](ROADMAP.md), "Waiting on the owner"); everything here says "Method Launcher"
-until then.
+Status: the first version's specification. Name, accent and the cross-app rules it relies on
+were decided by the owner on 2026-10-18 (ROADMAP.md; SUITE-STANDARDS.md §2 and §3).
 
 ## 1. Scope
 
@@ -18,7 +17,7 @@ until then.
 | macOS, Apple silicon | yes | yes, the `.dmg` |
 | Windows x64 | yes | yes, the setup `.exe` |
 | Linux x86_64 | yes | yes, the `.AppImage` (or the `.deb`, §4.4) |
-| Linux arm64 | yes, if the CI runner stays free (ROADMAP.md) | not yet: the suite publishes no arm64 app builds, so each card says so and links the app's build-from-source steps |
+| Linux arm64 | yes | not yet: the suite publishes no arm64 app builds, so each card says so and links the app's build-from-source steps |
 | Intel Mac, Windows on ARM, 32-bit | no | no |
 
 The screens are the same everywhere. What differs per system (where apps live, how they are
@@ -157,8 +156,9 @@ install, removes everything it made, and shows one plain sentence (§8).
    a second check): `SHA256SUMS` from that release. A release whose checksum file is
    missing, or has no line for the installer, cannot be installed on Windows or Linux: the
    card says "This release can't be checked yet, so it can't be installed from here" and
-   offers the release page. Until every app publishes the one name, the launcher also reads
-   `SHA256SUMS-app` (Method Reader's current name for its installers' checksums).
+   offers the release page. Every release now publishes `SHA256SUMS` (SUITE-STANDARDS.md §3);
+   for releases made before that rule, the launcher also reads `SHA256SUMS-app` (Method
+   Reader's earlier name for its installers' checksums).
 3. **Download** the installer.
    - https only. Requests start at `github.com`; redirects are followed only to GitHub's
      release-asset hosts (an allow-list in code, the same list `method-update` uses), and only
@@ -175,8 +175,8 @@ install, removes everything it made, and shows one plain sentence (§8).
 What a checksum proves: that the file is the one the release lists, unchanged on the way.
 Both files come from the same release, so it doesn't prove who made the release; a signature
 does that (Developer ID on macOS today, Authenticode on Windows once the suite signs Windows
-builds). Signing `SHA256SUMS` with the suite's updater keys would close that gap on Linux
-(ROADMAP.md, cross-app items).
+builds). `SHA256SUMS.minisig`, signed with each app's update key (SUITE-STANDARDS.md §3,
+later), closes that gap; the launcher checks it when it is there.
 
 ### 4.2 macOS: the .dmg
 
@@ -234,7 +234,8 @@ builds). Signing `SHA256SUMS` with the suite's updater keys would close that gap
 1. **Verify**: the SHA-256 matches the checksum line (§4.1).
 2. **Place it**: `~/Applications/Method-Budget.AppImage` (the folder made if needed), copied
    to a hidden staging name, made executable (0755), then renamed into place.
-3. **Desktop entry**: `~/.local/share/applications/method-budget.desktop` with the app's
+3. **Desktop entry**: `~/.local/share/applications/com.methodbudget.desktop.desktop`
+   (SUITE-STANDARDS.md §2) with the app's
    name, one line, `Exec="<path>" %F`, and the app's mark as its icon (the launcher ships the
    marks, so nothing in the AppImage is run to get one), then `update-desktop-database` on
    that folder if it exists. The launcher records what it installed (app, version, path) in
@@ -264,9 +265,9 @@ partial downloads, staging copies and mounts of its own.
 | System | Where the launcher looks | Version from |
 |---|---|---|
 | macOS | `/Applications` and `~/Applications`, bundles with the catalog's bundle id | `CFBundleShortVersionString` |
-| Windows | the per-user and per-machine uninstall entries in the registry, matched by display name | `DisplayVersion`; the executable from `InstallLocation` |
-| Linux, AppImage | the launcher's `installed.json`, then the files it names | the version recorded at install (an AppImage updated by its app records its own; cross-app item) |
-| Linux, .deb | `dpkg-query -W` for the app's package name | the package version |
+| Windows | the per-user and per-machine uninstall entries in the registry, matched by display name `Method <Noun>` | `DisplayVersion`; the executable from `InstallLocation` |
+| Linux, AppImage | the launcher's `installed.json`, then the files it names | the version recorded at install |
+| Linux, .deb | `dpkg-query -W method-<noun>` | the package version |
 
 An app installed by hand (dragged in, or installed from the website) is found the same way
 and shown as installed.
@@ -286,9 +287,9 @@ and shown as installed.
   upgrades in place; the AppImage is replaced through its staging name; the .deb through
   apt). When an app gains its own updater on that system, the launcher goes back to detect
   only for it.
-- To make the macOS path immediate, each app accepts a launch argument meaning "check for
-  updates now" (cross-app item). Until an app supports it, its card says "Choose Help >
-  Check for Updates in Method Budget."
+- To make the macOS path immediate, the launcher opens the app with `--check-for-updates`
+  (SUITE-STANDARDS.md §2). For an installed version older than that rule, its card says
+  "Choose Help > Check for Updates in Method Budget."
 - Timing follows SUITE-STANDARDS.md §1: 2 minutes after launch, then every 6 hours while
   open, and when the window comes forward if the last check is more than an hour old. The
   Settings switch turns this off; Check for Updates... still works by hand.
@@ -312,8 +313,8 @@ and shown as installed.
   (SUITE-STANDARDS.md §2): `~/Library/Application Support/<id>/` on macOS,
   `%APPDATA%\<id>\` on Windows, `$XDG_DATA_HOME/<id>/` (default `~/.local/share/<id>/`) on
   Linux. The launcher reads those files only; a missing, unreadable or unknown-shape file is
-  skipped for that app. The shared shape is a cross-app item; the launcher accepts a list of
-  entries each with an absolute `path` and an optional RFC 3339 `opened` time.
+  skipped for that app. The shape (SUITE-STANDARDS.md §2) is a list, newest first, of
+  entries each with an absolute `path` and an RFC 3339 `opened` time.
 - **Open a recent file**: the same launch as above with the file's path as the one argument
   (macOS `open -b <id> <path>`), so it opens in the app that listed it, whatever the system's
   default for that extension is.
@@ -324,8 +325,9 @@ and shown as installed.
 
 Each installed app's card has Open Sample: it opens the app with its Field Station sample
 (SUITE-STANDARDS.md §8), as a fresh untitled copy, exactly as the app's own Help > Open
-Sample does, through a launch argument the app accepts (cross-app item). Until an app
-supports it, the button is hidden for that app. The launcher ships no sample files.
+Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2). For an
+installed version older than that rule, the button is hidden. The launcher ships no sample
+files.
 
 ## 8. Failure cases
 
@@ -376,8 +378,8 @@ technical reason, selectable) and Try Again where retrying could help.
 | Method Budget | v0.4.0 | yes | yes | yes / yes | **none** | darwin-aarch64 |
 
 So today the launcher can install Method Reader on every system, and Method Schedule and
-Method Budget on macOS only. The fix is one file per release (cross-app item, through MOrg):
-`SHA256SUMS` listing every asset, installers included.
+Method Budget on macOS only. SUITE-STANDARDS.md §3 now requires one `SHA256SUMS` listing
+every file on every release, so their next releases fix this.
 
 ## 10. Platform traits
 
@@ -391,20 +393,11 @@ The window and the install flow are written once, against these traits (in
 | `Install` | Turn a downloaded, checksum-checked installer into an installed app (§4.2 to §4.4), including its own verification. |
 | `Folders` | The launcher's cache and data folders, and an app's data folder for `recent.json`. |
 
-## 11. Open questions
+## 11. Decided
 
-For the owner, with recommendations, in ROADMAP.md "Waiting on the owner": the name, the
-accent, the repository, AppImage or .deb by default on Linux, and building the launcher for
-Linux arm64.
-
-For MOrg and the other app sessions (cross-app), in ROADMAP.md:
-
-1. `SHA256SUMS` on every release, listing every asset (§9.1), and later signed.
-2. Launch arguments every app accepts: "check for updates now" and "open the sample".
-3. The shared `recent.json` shape, and each app's data folder on Windows and Linux.
-4. Each app's Linux package name and Windows uninstall display name, for §4.6.
-5. A catalog file on methodproduction.com and a "New in the apps" feed: not in the first
-   version.
+The owner's decisions and the cross-app rules (2026-10-18) are recorded in ROADMAP.md and
+SUITE-STANDARDS.md §2 and §3. Not in the first version: a catalog file on
+methodproduction.com and a "New in the apps" feed.
 
 ## 12. Testing
 
