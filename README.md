@@ -25,15 +25,30 @@ whichever system you use.
 
 ## Status
 
-Status: in development. See [docs/spec.md](docs/spec.md) for what it does and
+Status: first release, 0.1.0. See [docs/spec.md](docs/spec.md) for what it does and
 [docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
 
 | Platform | Built | Signed | Tested |
 | --- | --- | --- | --- |
-| macOS (Apple silicon) | From source | No | CI tests |
-| Windows (x64) | From source | No | CI tests |
-| Linux (x86_64) | From source | No | CI tests |
-| Linux (arm64) | From source | No | CI tests |
+| macOS (Apple silicon) | Installer | Developer ID, notarised | Installs and updates tried with real releases |
+| Windows (x64) | Installer | No | Weekly build and tests |
+| Linux (x86_64) | .deb and AppImage | No | Weekly build and tests |
+| Linux (arm64) | From source | No | Weekly build and tests |
+
+## Install
+
+Download the launcher for your system from its
+[latest release](https://github.com/method-production-suite/method-launcher/releases/latest):
+
+| System | Download |
+| --- | --- |
+| macOS (Apple silicon) | [Method-Launcher-macOS.dmg](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-macOS.dmg) |
+| Windows (x64) | [Method-Launcher-windows-x64-setup.exe](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-windows-x64-setup.exe) |
+| Linux (Debian, Ubuntu) | [Method-Launcher-linux-amd64.deb](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-amd64.deb) |
+| Linux (any x86_64) | [Method-Launcher-linux-x86_64.AppImage](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-x86_64.AppImage) |
+
+On a Mac, open the disk image and drag Method Launcher into Applications. Every release
+lists the files' checksums in `SHA256SUMS`.
 
 ## Build from source
 

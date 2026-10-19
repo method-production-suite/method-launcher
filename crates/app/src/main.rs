@@ -58,6 +58,8 @@ type Scanned = (Option<Installed>, Option<egui::ColorImage>);
 enum Event {
     Scanned(Vec<Scanned>),
     Latest(usize, Latest),
+    /// The launcher's own latest release, when it is newer than this one.
+    LauncherNewer(String),
     // Installs run from the launcher on macOS only, so far.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Stage(usize, Stage),
@@ -79,6 +81,8 @@ struct Launcher {
     /// Version checks still running, and when the last round finished.
     checking: usize,
     checked: Option<std::time::SystemTime>,
+    /// A newer release of the launcher itself (spec §5.2).
+    launcher_newer: Option<String>,
     send: mpsc::Sender<Event>,
     receive: mpsc::Receiver<Event>,
     /// Each app's mark, and its own icon once found installed, ready to draw.
@@ -109,6 +113,7 @@ impl Launcher {
             scanning: false,
             checking: 0,
             checked: None,
+            launcher_newer: None,
             send,
             receive,
             marks,
@@ -156,6 +161,17 @@ impl Launcher {
             return;
         }
         self.checking = APPS.iter().filter(|a| a.released).count();
+        {
+            let (send, ctx) = (self.send.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                if let Ok(latest) = System.launcher_latest()
+                    && launcher_core::version::is_newer(&latest, env!("CARGO_PKG_VERSION"))
+                {
+                    let _ = send.send(Event::LauncherNewer(latest));
+                    ctx.request_repaint();
+                }
+            });
+        }
         for (index, app) in APPS.iter().enumerate().filter(|(_, a)| a.released) {
             let (send, ctx) = (self.send.clone(), ctx.clone());
             std::thread::spawn(move || {
@@ -187,6 +203,7 @@ impl Launcher {
                         self.checked = Some(std::time::SystemTime::now());
                     }
                 }
+                Event::LauncherNewer(version) => self.launcher_newer = Some(version),
                 Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
                 Event::Done(index, result) => {
                     let app = APPS.get(index).map_or("The app", |a| a.name);
@@ -616,6 +633,16 @@ impl eframe::App for Launcher {
                     ui.label(egui::RichText::new(checked).size(13.0).color(muted));
                 });
             });
+            if let Some(version) = self.launcher_newer.clone() {
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    ui.label(egui::RichText::new(format!("Method Launcher {version} is available.")).size(14.0));
+                    if link(ui, "Download it") {
+                        self.link(launcher_core::catalog::LAUNCHER_RELEASES);
+                    }
+                });
+            }
             if let Some((text, error)) = &self.notice {
                 ui.add_space(14.0);
                 let colour = if *error { ui.visuals().error_fg_color } else { ui.visuals().text_color() };

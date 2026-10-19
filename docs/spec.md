@@ -330,13 +330,15 @@ macOS first; each app's own updater stays a second way.
 
 ### 5.2 The launcher itself
 
-- **macOS**: `method-update`, pinned by full commit, with its own minisign key (1Password,
-  "Method Launcher - Update signing key"), the standard schedule and switch, Check for
-  Updates..., and What's New once after an update.
-- **Windows and Linux**: `method-update` is macOS-only today, so the launcher checks its own
-  manifest on the same schedule and offers the new version as a download: "Version X of
-  Method Launcher is ready" with Download, which opens the release page in the browser. When
-  the suite's updater covers these systems, the launcher moves to it.
+- **From 0.1.0, on every system**: the launcher reads where its own `releases/latest`
+  redirects and, when that tag is newer than itself, says "Method Launcher X is available"
+  at the top of its window with **Download it**, which opens the release page in the
+  browser. No update key and no `latest.json` are needed for that.
+- **Later, on macOS**: `method-update`, pinned by full commit, with the launcher's own
+  minisign key (its public half in the app, the private key and its password as repository
+  secrets, in 1Password as "Method Launcher - Update signing key"), the standard schedule and
+  switch, Check for Updates..., and What's New once after an update. Windows and Linux move
+  to it when the suite's updater covers them.
 
 ## 6. Open and recent files
 

@@ -109,6 +109,15 @@ impl System {
         Some(dir.join(format!("{name}-{}-{n}", std::process::id())))
     }
 
+    /// The version of the launcher's own latest release, from where `releases/latest`
+    /// redirects (spec §5.2). The launcher doesn't update itself yet; it offers the download.
+    pub fn launcher_latest(&self) -> Result<String, String> {
+        let scratch = self.scratch("launcher-redirect").ok_or("no cache folder")?;
+        let location = net::redirect_of(launcher_core::catalog::LAUNCHER_RELEASES, &scratch).map_err(|e| e.to_string())?;
+        let tag = launcher_core::release::tag_from_location(&location).ok_or("the latest release has no version tag")?;
+        Ok(tag.trim_start_matches('v').to_string())
+    }
+
     /// An app's latest release, from its `latest.json` (spec §5.1): version, date, what's new.
     pub fn latest_release(&self, app: &App) -> Result<launcher_core::release::Release, String> {
         let scratch = self.scratch(&format!("{}-latest.json", app.slug)).ok_or("no cache folder")?;

@@ -1,5 +1,9 @@
-//! Repository tasks: `cargo xtask ci` runs every gate CI runs (format, lints, tests, crate
-//! layers); `cargo xtask layers` checks only which crate may depend on which.
+//! Repository tasks: `cargo xtask ci` runs every gate (format, lints, tests, crate layers);
+//! `cargo xtask layers` checks only which crate may depend on which; and the packaging tasks
+//! `version`, `bundle-macos`, `dmg-macos`, `package-linux` and `package-windows` (see
+//! `package.rs` and docs/RELEASING.md).
+
+mod package;
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -15,11 +19,17 @@ const LAYERS: [(&str, &[&str]); 4] = [
 const UI_ONLY: [&str; 3] = ["egui", "eframe", "winit"];
 
 fn main() -> ExitCode {
-    let task = std::env::args().nth(1).unwrap_or_default();
-    let result = match task.as_str() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (task, rest) = args.split_first().map(|(t, r)| (t.as_str(), r)).unwrap_or(("", &[]));
+    let result = match task {
         "ci" => ci(),
         "layers" => layers(),
-        _ => Err("usage: cargo xtask <ci|layers>".to_string()),
+        "version" => package::workspace_version().map(|v| println!("{v}")),
+        "bundle-macos" => package::parse_options(rest).and_then(|o| package::bundle_macos(&o)),
+        "dmg-macos" => package::parse_options(rest).and_then(|o| package::dmg_macos(&o)),
+        "package-linux" => package::parse_options(rest).and_then(|o| package::package_linux(&o)),
+        "package-windows" => package::parse_options(rest).and_then(|o| package::package_windows(&o)),
+        _ => Err("usage: cargo xtask <ci|layers|version|bundle-macos|dmg-macos|package-linux|package-windows>".to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

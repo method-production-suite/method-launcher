@@ -10,6 +10,9 @@ pub const ORG: &str = "method-production-suite";
 /// The launcher's own bundle identifier, which also names its data folders.
 pub const LAUNCHER_ID: &str = "com.methodlauncher.desktop";
 
+/// The launcher's own releases (docs/spec.md §5.2).
+pub const LAUNCHER_RELEASES: &str = "https://github.com/method-production-suite/method-launcher/releases/latest";
+
 /// An app's name and identifier before the suite's naming standard, still found on
 /// computers that installed an older release (docs/spec.md §4.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
