@@ -160,10 +160,12 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Meth
         let dir = std::env::temp_dir().join(format!("launcher-path-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("method-budget-app.exe"), b"").unwrap();
-        let path_var = format!("/nonexistent:{}", dir.display());
-        assert_eq!(find_on_path("method-budget-app", &path_var, ':', &[".exe"]), Some(dir.join("method-budget-app.exe")));
-        assert_eq!(find_on_path("method-budget-app", &path_var, ':', &[]), None);
-        assert_eq!(find_on_path("method-schedule-app", &path_var, ':', &[".exe"]), None);
+        // PATH's own separator: Windows paths have a colon after the drive letter.
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        let path_var = format!("{}{sep}{}", std::env::temp_dir().join("launcher-no-such-folder").display(), dir.display());
+        assert_eq!(find_on_path("method-budget-app", &path_var, sep, &[".exe"]), Some(dir.join("method-budget-app.exe")));
+        assert_eq!(find_on_path("method-budget-app", &path_var, sep, &[]), None);
+        assert_eq!(find_on_path("method-schedule-app", &path_var, sep, &[".exe"]), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
