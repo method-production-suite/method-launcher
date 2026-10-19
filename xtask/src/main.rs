@@ -5,7 +5,12 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 
 /// Crates and the workspace crates each may depend on.
-const LAYERS: [(&str, &[&str]); 3] = [("launcher-core", &[]), ("launcher-cli", &["launcher-core"]), ("method-launcher", &["launcher-core"])];
+const LAYERS: [(&str, &[&str]); 4] = [
+    ("launcher-core", &[]),
+    ("launcher-sys", &["launcher-core"]),
+    ("launcher-cli", &["launcher-core", "launcher-sys"]),
+    ("method-launcher", &["launcher-core", "launcher-sys"]),
+];
 /// Dependencies only the desktop app may use.
 const UI_ONLY: [&str; 3] = ["egui", "eframe", "winit"];
 

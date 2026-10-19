@@ -83,8 +83,21 @@ impl Kind {
 pub struct Installed {
     /// The bundle, executable or AppImage that opens it.
     pub path: PathBuf,
-    /// The version it reports, as written there.
+    /// The version it reports, as written there; empty when it reports none.
     pub version: String,
+    /// Installed under the app's earlier name ([`crate::catalog::Legacy`]).
+    pub legacy: bool,
+}
+
+/// What opening an app did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Opened {
+    /// It started, with any launch arguments.
+    Started,
+    /// It was already running and was brought forward; no arguments were passed.
+    BroughtForward,
+    /// It was already running and this system can't bring it forward; nothing was done.
+    AlreadyRunning,
 }
 
 /// Which catalog apps are installed, where, and at which version (docs/spec.md §4.6).
@@ -94,9 +107,15 @@ pub trait Locate {
 
 /// Opening apps and files, and showing a location (docs/spec.md §6).
 pub trait Launch {
-    fn open_app(&self, app: &App, installed: &Installed) -> Result<(), String>;
+    /// Whether the app is running now. Launch arguments only work when it isn't.
+    fn is_running(&self, app: &App, installed: &Installed) -> bool;
+    /// Opens the app. `args` are passed only when it starts (SUITE-STANDARDS.md §2); a
+    /// running app is brought forward where the system can, and left alone otherwise.
+    fn open_app(&self, app: &App, installed: &Installed, args: &[&str]) -> Result<Opened, String>;
     fn open_file(&self, app: &App, installed: &Installed, file: &Path) -> Result<(), String>;
     fn show_location(&self, path: &Path) -> Result<(), String>;
+    /// Opens an https link in the person's browser.
+    fn open_url(&self, url: &str) -> Result<(), String>;
 }
 
 /// Turns a downloaded, checksum-checked installer into an installed app, with the system's own
@@ -107,9 +126,10 @@ pub trait Install {
 
 /// Where the launcher keeps its cache and data, and where an app keeps `recent.json`.
 pub trait Folders {
-    fn cache(&self) -> PathBuf;
-    fn data(&self) -> PathBuf;
-    fn app_data(&self, app: &App) -> PathBuf;
+    fn cache(&self) -> Option<PathBuf>;
+    fn data(&self) -> Option<PathBuf>;
+    /// The folders an app's `recent.json` may be in, in the order to look.
+    fn app_data(&self, app: &App) -> Vec<PathBuf>;
 }
 
 #[cfg(test)]

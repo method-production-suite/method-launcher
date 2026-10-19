@@ -63,16 +63,19 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 - **[have] S** Workspace, CI on three systems, cargo deny, crate-age check, licences,
   README (this scaffold).
-- **[partial] S** The built-in catalog with its checks (spec §9). Have: the four entries and
-  their tests.
-- **[partial] S** Platform traits (spec §10) and the target, with installer names per
-  target. Have: the traits, `Target`, and the names with their tests.
-- **[missing] S** The apps view (spec §3.1).
-- **[missing] M** `Locate` on each system: bundles by id on macOS, uninstall entries on
-  Windows, `installed.json`, `dpkg-query` and `method-<noun>-app` on the PATH on Linux.
-- **[missing] S** `Launch` on each system: whether an app is running, open it (launch
-  arguments only when it isn't), show its location; Release notes link.
-- **[missing] S** Command line: `method-launcher list` and `status`.
+- **[have] S** The built-in catalog with its checks (spec §9), with each app's binary,
+  package and earlier name.
+- **[have] S** Platform traits (spec §10) and the target, with installer names per target.
+- **[have] S** The apps view (spec §3.1): installed or not, version, Open, Show in Finder,
+  Release notes; looks again when the window comes forward or on Refresh (⌘R).
+- **[partial] M** `Locate` on each system: bundles by id on macOS (including an app's earlier
+  name), uninstall entries on Windows, `dpkg-query` and `method-<noun>-app` on the PATH on
+  Linux. Tested on macOS; Windows and Linux by unit tests and cross-builds, not yet on a
+  machine. Linux's `installed.json` comes with installs (M2).
+- **[partial] S** `Launch` on each system: whether an app is running, open it (launch
+  arguments only when it isn't), show its location; Release notes link. Built for all
+  three; not yet tried on a screen.
+- **[have] S** Command line: `method-launcher list` and `status`.
 
 ## M2: Install
 

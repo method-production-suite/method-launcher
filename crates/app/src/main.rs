@@ -1,10 +1,20 @@
-//! Method Launcher's window (docs/spec.md §3). Today it shows the catalog; installing,
-//! opening and the rest arrive one pull request at a time (docs/ROADMAP.md).
+//! Method Launcher's window (docs/spec.md §3): one card per suite app, showing whether it is
+//! installed here and at which version, with Open and Show in Finder for the ones that are.
+//! Installing arrives with milestone M2 (docs/ROADMAP.md); until then a card for an app that
+//! isn't installed links to its download page.
 
 use launcher_core::catalog::{APPS, App};
-use launcher_core::platform::Target;
+use launcher_core::platform::{Installed, Launch, Locate, Opened, Target};
+use launcher_sys::System;
+use std::sync::mpsc;
+
+#[cfg(test)]
+mod screens;
 
 const APP_NAME: &str = "Method Launcher";
+
+/// Wide enough for two cards side by side.
+const TWO_COLUMNS_FROM: f32 = 860.0;
 
 fn main() -> eframe::Result<()> {
     if std::env::args().nth(1).as_deref() == Some("--version") {
@@ -13,10 +23,164 @@ fn main() -> eframe::Result<()> {
     }
     let viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([960.0, 640.0]).with_min_inner_size([720.0, 520.0]);
     let options = eframe::NativeOptions { viewport, ..Default::default() };
-    eframe::run_native(APP_NAME, options, Box::new(|_cc| Ok(Box::new(Launcher))))
+    eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(Launcher::new(&cc.egui_ctx)))))
 }
 
-struct Launcher;
+/// What the launcher knows about one app on this computer.
+#[derive(Clone, Debug, PartialEq)]
+enum Found {
+    Looking,
+    Installed(Installed),
+    Missing,
+}
+
+struct Launcher {
+    found: Vec<Found>,
+    scan: Option<mpsc::Receiver<Vec<Option<Installed>>>>,
+    /// One line about the last thing the person did, and whether it went wrong.
+    notice: Option<(String, bool)>,
+    focused: bool,
+}
+
+impl Launcher {
+    fn new(ctx: &egui::Context) -> Self {
+        let mut launcher = Launcher { found: vec![Found::Looking; APPS.len()], scan: None, notice: None, focused: true };
+        launcher.rescan(ctx);
+        launcher
+    }
+
+    /// Looks for the apps again, off the interface thread.
+    fn rescan(&mut self, ctx: &egui::Context) {
+        if self.scan.is_some() {
+            return;
+        }
+        let (send, receive) = mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let found = APPS.iter().map(|app| System.locate(app)).collect();
+            let _ = send.send(found);
+            ctx.request_repaint();
+        });
+        self.scan = Some(receive);
+    }
+
+    fn take_scan(&mut self) {
+        let Some(receive) = &self.scan else { return };
+        if let Ok(found) = receive.try_recv() {
+            self.found = found.into_iter().map(|f| f.map_or(Found::Missing, Found::Installed)).collect();
+            self.scan = None;
+        }
+    }
+
+    fn report(&mut self, result: Result<String, String>) {
+        self.notice = Some(match result {
+            Ok(text) => (text, false),
+            Err(text) => (text, true),
+        });
+    }
+
+    fn open(&mut self, app: &App, installed: &Installed) {
+        let result = System.open_app(app, installed, &[]).map(|opened| match opened {
+            Opened::Started => format!("Opening {}.", app.name),
+            Opened::BroughtForward => format!("{} is already open.", app.name),
+            Opened::AlreadyRunning => format!("{} is already open. Switch to it from the taskbar.", app.name),
+        });
+        self.report(result.map_err(|e| format!("{} couldn't be opened. {e}", app.name)));
+    }
+
+    fn link(&mut self, url: &str) {
+        if let Err(e) = System.open_url(url) {
+            self.report(Err(format!("The link couldn't be opened. {e}")));
+        }
+    }
+
+    fn card(&mut self, ui: &mut egui::Ui, index: usize, app: &App) {
+        let accent = colour(if ui.visuals().dark_mode { app.accent.1 } else { app.accent.0 });
+        let found = self.found.get(index).cloned().unwrap_or(Found::Looking);
+        egui::Frame::group(ui.style()).inner_margin(12.0).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 8.0, accent);
+                ui.vertical(|ui| {
+                    ui.heading(app.name);
+                    ui.label(app.tagline);
+                });
+            });
+            ui.add_space(6.0);
+            ui.weak(status_line(app, &found));
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| match &found {
+                Found::Looking => {
+                    ui.spinner();
+                }
+                Found::Installed(installed) => {
+                    if ui.button("Open").clicked() {
+                        self.open(app, installed);
+                    }
+                    if ui.button(SHOW_LOCATION).clicked()
+                        && let Err(e) = System.show_location(&installed.path)
+                    {
+                        self.report(Err(format!("{} couldn't be shown. {e}", app.name)));
+                    }
+                    if app.released && ui.link("Release notes").clicked() {
+                        self.link(&app.releases_url());
+                    }
+                }
+                Found::Missing if !app.released => {
+                    if ui.button("Visit the site").clicked() {
+                        self.link(app.site);
+                    }
+                }
+                Found::Missing if !buildable_here() => {
+                    if ui.button("Build from source").clicked() {
+                        self.link(&app.source_url());
+                    }
+                    if ui.link("Visit the site").clicked() {
+                        self.link(app.site);
+                    }
+                }
+                Found::Missing => {
+                    if ui.button("Download page").clicked() {
+                        self.link(&app.releases_url());
+                    }
+                    if ui.link("Visit the site").clicked() {
+                        self.link(app.site);
+                    }
+                }
+            });
+        });
+    }
+}
+
+#[cfg(target_os = "macos")]
+const SHOW_LOCATION: &str = "Show in Finder";
+#[cfg(target_os = "windows")]
+const SHOW_LOCATION: &str = "Show in Explorer";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const SHOW_LOCATION: &str = "Show in Files";
+
+/// Whether the suite publishes app builds for this system (not yet for Linux on ARM).
+fn buildable_here() -> bool {
+    Target::current().is_some_and(|t| !t.kinds().is_empty())
+}
+
+/// The quiet line under an app's name.
+fn status_line(app: &App, found: &Found) -> String {
+    match found {
+        Found::Looking => "Looking for it on this computer".to_string(),
+        Found::Installed(installed) => {
+            let version = if installed.version.is_empty() { "Installed".to_string() } else { format!("Version {}", installed.version) };
+            match (installed.legacy, app.legacy) {
+                (true, Some(legacy)) => format!("{version}, installed as {}", legacy.name),
+                _ => version,
+            }
+        }
+        Found::Missing if !app.released => "In development. No download yet.".to_string(),
+        Found::Missing if !buildable_here() => format!("There's no {} for this system yet. You can build it from source.", app.name),
+        Found::Missing => "Not installed".to_string(),
+    }
+}
 
 /// `#RRGGBB` to a colour; grey for anything else (the catalog's tests keep that from happening).
 fn colour(hex: &str) -> egui::Color32 {
@@ -27,37 +191,50 @@ fn colour(hex: &str) -> egui::Color32 {
     }
 }
 
-fn card(ui: &mut egui::Ui, app: &App) {
-    let accent = colour(if ui.visuals().dark_mode { app.accent.1 } else { app.accent.0 });
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 6.0, accent);
-            ui.vertical(|ui| {
-                ui.heading(app.name);
-                ui.label(app.tagline);
-                let buildable = Target::current().is_some_and(|t| !t.kinds().is_empty());
-                ui.weak(match (app.released, buildable) {
-                    (false, _) => "In development. No download yet.".to_string(),
-                    (true, false) => format!("There's no {} for this system yet. You can build it from source.", app.name),
-                    (true, true) => "Not installed".to_string(),
-                });
-            });
-        });
-    });
-}
-
 impl eframe::App for Launcher {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.take_scan();
+        // Look again when the window comes forward: an app may have been installed meanwhile.
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        if focused && !self.focused {
+            self.rescan(&ctx);
+        }
+        self.focused = focused;
+        if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R))) {
+            self.rescan(&ctx);
+        }
+
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(8.0);
-            ui.label("Install the apps you want. Each one updates itself.");
-            ui.add_space(8.0);
-            for app in &APPS {
-                card(ui, app);
-                ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Install the apps you want. Each one updates itself.");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add_enabled(self.scan.is_none(), egui::Button::new("Refresh")).clicked() {
+                        self.rescan(&ctx);
+                    }
+                });
+            });
+            if let Some((text, error)) = &self.notice {
+                ui.add_space(4.0);
+                if *error {
+                    ui.colored_label(ui.visuals().error_fg_color, text);
+                } else {
+                    ui.label(text);
+                }
             }
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let columns = if ui.available_width() >= TWO_COLUMNS_FROM { 2 } else { 1 };
+                for (row, chunk) in APPS.chunks(columns).enumerate() {
+                    ui.columns(columns, |cols| {
+                        for (col, (ui, app)) in cols.iter_mut().zip(chunk).enumerate() {
+                            self.card(ui, row * columns + col, app);
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+            });
         });
     }
 }
@@ -65,10 +242,24 @@ impl eframe::App for Launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use launcher_core::catalog::by_slug;
+    use std::path::PathBuf;
 
     #[test]
     fn colours_parse() {
         assert_eq!(colour("#0E7468"), egui::Color32::from_rgb(0x0E, 0x74, 0x68));
         assert_eq!(colour("nope"), egui::Color32::GRAY);
+    }
+
+    #[test]
+    fn status_lines_say_what_is_installed() {
+        let reader = by_slug("reader").unwrap();
+        let legacy =
+            Found::Installed(Installed { path: PathBuf::from("/Applications/Screepub Desktop.app"), version: "0.12.1".into(), legacy: true });
+        assert_eq!(status_line(reader, &legacy), "Version 0.12.1, installed as Screepub Desktop");
+        let budget = by_slug("budget").unwrap();
+        let unknown = Found::Installed(Installed { path: PathBuf::from("x"), version: String::new(), legacy: false });
+        assert_eq!(status_line(budget, &unknown), "Installed");
+        assert_eq!(status_line(by_slug("storyteller").unwrap(), &Found::Missing), "In development. No download yet.");
     }
 }

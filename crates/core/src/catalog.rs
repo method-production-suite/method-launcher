@@ -7,6 +7,19 @@ use crate::platform::Kind;
 /// GitHub organisation every app's repository lives in.
 pub const ORG: &str = "method-production-suite";
 
+/// The launcher's own bundle identifier, which also names its data folders.
+pub const LAUNCHER_ID: &str = "com.methodlauncher.desktop";
+
+/// An app's name and identifier before the suite's naming standard, still found on
+/// computers that installed an older release (docs/spec.md §4.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Legacy {
+    /// The old display name, also the old bundle's file name without `.app`.
+    pub name: &'static str,
+    /// The end of the old bundle identifier; the full identifier is checked to end with it.
+    pub id_suffix: &'static str,
+}
+
 /// One app the launcher can show, install and open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct App {
@@ -26,12 +39,34 @@ pub struct App {
     pub site: &'static str,
     /// Accent for light and dark appearance, as `#RRGGBB`.
     pub accent: (&'static str, &'static str),
+    /// The app as older releases installed it, if it was named differently.
+    pub legacy: Option<Legacy>,
 }
 
 impl App {
     /// The noun in "Method <Noun>": `Budget`.
     pub fn noun(&self) -> &'static str {
         self.name.strip_prefix("Method ").unwrap_or(self.name)
+    }
+
+    /// The window binary: `method-budget-app` (SUITE-STANDARDS.md §2).
+    pub fn binary(&self) -> String {
+        format!("method-{}-app", self.slug)
+    }
+
+    /// The Linux package name: `method-budget` (SUITE-STANDARDS.md §2).
+    pub fn package(&self) -> String {
+        format!("method-{}", self.slug)
+    }
+
+    /// The latest release's page, for "Release notes" and downloads.
+    pub fn releases_url(&self) -> String {
+        self.latest_url()
+    }
+
+    /// Where the build-from-source steps are.
+    pub fn source_url(&self) -> String {
+        format!("https://github.com/{ORG}/{}#build-from-source", self.repo)
     }
 
     /// The installer's file name for this kind, or `None` while there is no release yet.
@@ -71,6 +106,7 @@ pub const APPS: [App; 4] = [
         released: false,
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
+        legacy: None,
     },
     App {
         slug: "reader",
@@ -81,6 +117,8 @@ pub const APPS: [App; 4] = [
         released: true,
         site: "https://methodreader.com",
         accent: ("#7052BA", "#B49CF0"),
+        // Releases before the rename installed the app under its earlier name.
+        legacy: Some(Legacy { name: "Screepub Desktop", id_suffix: ".screepub" }),
     },
     App {
         slug: "schedule",
@@ -91,6 +129,7 @@ pub const APPS: [App; 4] = [
         released: true,
         site: "https://methodschedule.com",
         accent: ("#2F5FB3", "#7AA2F0"),
+        legacy: None,
     },
     App {
         slug: "budget",
@@ -101,6 +140,7 @@ pub const APPS: [App; 4] = [
         released: true,
         site: "https://methodbudget.com",
         accent: ("#0E7468", "#2CC7B2"),
+        legacy: None,
     },
 ];
 
@@ -127,6 +167,14 @@ mod tests {
             assert_eq!(app.bundle_id, format!("com.method{}.desktop", noun.to_lowercase()));
             assert!(app.site.starts_with("https://method"), "{}: site is not https", app.slug);
         }
+    }
+
+    #[test]
+    fn binaries_and_packages_follow_the_standard() {
+        let budget = by_slug("budget").unwrap();
+        assert_eq!(budget.binary(), "method-budget-app");
+        assert_eq!(budget.package(), "method-budget");
+        assert_eq!(budget.source_url(), "https://github.com/method-production-suite/method-budget#build-from-source");
     }
 
     #[test]

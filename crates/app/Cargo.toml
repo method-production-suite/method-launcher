@@ -17,5 +17,11 @@ workspace = true
 
 [dependencies]
 launcher-core = { workspace = true }
+launcher-sys = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
+
+[dev-dependencies]
+# Draws the window to an image with no window, for the pictures test in src/screens.rs.
+egui_kittest = { version = "=0.36.2", features = ["eframe", "wgpu"] }
+png = "0.18"
