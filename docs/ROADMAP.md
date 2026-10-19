@@ -116,6 +116,10 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   exists); Linux AppImage and `.deb` (x86_64, and arm64 per decision 5); version-free names
   (`Method-Launcher-macOS.dmg`, `Method-Launcher-windows-x64-setup.exe`,
   `Method-Launcher-linux-x86_64.AppImage`, ...); `SHA256SUMS`; a draft release
-  (SUITE-STANDARDS.md §3, RELEASE-CHECKLIST.md).
+  (SUITE-STANDARDS.md §3, RELEASE-CHECKLIST.md). A crate-age job checks the whole lock, and
+  every build and signing job needs it: no age-out exceptions, but a young crate that fixes
+  an advisory passes when marked with its RUSTSEC id (SUITE-STANDARDS.md §6; the
+  method-storyteller release workflow is the model, or the shared method-libs script once it
+  lands).
 - **[missing] S** Pictures: the four shots from an offscreen render (SUITE-STANDARDS.md §7).
 - **[missing] S** `site/` for the website, and MOrg adds the launcher to the catalog.
