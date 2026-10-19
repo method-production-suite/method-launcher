@@ -7,8 +7,10 @@
 #   Method-Launcher-macOS.dmg               Method-Launcher-linux-amd64.deb
 #   Method-Launcher-windows-x64-setup.exe   Method-Launcher-linux-x86_64.AppImage
 #
-# The packaging itself is `cargo xtask bundle-macos`, `dmg-macos`, `package-windows` and
-# `package-linux` (xtask/src/package.rs), which also run on a developer's machine.
+# The packaging itself is xtask's `bundle-macos`, `dmg-macos`, `package-windows` and
+# `package-linux` (xtask/src/package.rs), which also run on a developer's machine. Here the
+# xtask binary is built with the app, before any secret, and run directly afterwards: no step
+# runs cargo once a job has met a secret (tested by xtask's release_workflow test).
 #
 # Signing uses the suite's secret names (Method Budget's), so one 1Password item feeds every
 # repository. Each signing step is skipped without its secrets; the build is the same
@@ -265,7 +267,10 @@ jobs:
           set -euo pipefail
           sign=()
           if [ "${MACOS_SIGN:-no}" = yes ]; then sign=(--sign "$APPLE_SIGNING_IDENTITY"); fi
-          cargo xtask bundle-macos --target aarch64-apple-darwin --no-build ${sign[@]+"${sign[@]}"}
+          # The xtask binary built before any secret, run directly: never cargo once a key is
+          # here, since a stale fingerprint would rebuild and run build scripts beside it.
+          test -x target/debug/xtask
+          target/debug/xtask bundle-macos --target aarch64-apple-darwin --no-build ${sign[@]+"${sign[@]}"}
 
       - name: Notarize and staple the app (macOS)
         if: runner.os == 'macOS' && env.MACOS_NOTARIZE == 'yes'
@@ -287,7 +292,7 @@ jobs:
           set -euo pipefail
           sign=()
           if [ "${MACOS_SIGN:-no}" = yes ]; then sign=(--sign "$APPLE_SIGNING_IDENTITY"); fi
-          cargo xtask dmg-macos ${sign[@]+"${sign[@]}"}
+          target/debug/xtask dmg-macos ${sign[@]+"${sign[@]}"}
 
       - name: Notarize and staple the disk image (macOS)
         if: runner.os == 'macOS' && env.MACOS_NOTARIZE == 'yes'
@@ -349,7 +354,8 @@ jobs:
 
       - name: Build the installer (Windows)
         if: runner.os == 'Windows'
-        run: cargo xtask package-windows --no-build
+        # The prebuilt xtask, directly: the app may already be signed with the certificate.
+        run: target/debug/xtask.exe package-windows --no-build
 
       - name: Sign the installer (Windows)
         if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
@@ -379,7 +385,7 @@ jobs:
           curl --fail --location --silent --show-error --output "$tools/runtime" "$APPIMAGE_RUNTIME_URL"
           printf '%s  %s\n' "$APPIMAGETOOL_SHA256" "$tools/appimagetool" "$APPIMAGE_RUNTIME_SHA256" "$tools/runtime" | sha256sum --check --strict
           chmod +x "$tools/appimagetool"
-          cargo xtask package-linux --no-build --appimagetool "$tools/appimagetool" --runtime "$tools/runtime"
+          target/debug/xtask package-linux --no-build --appimagetool "$tools/appimagetool" --runtime "$tools/runtime"
           dpkg-deb --info target/bundle/linux/Method-Launcher-linux-amd64.deb
           dpkg-deb --contents target/bundle/linux/Method-Launcher-linux-amd64.deb
 
