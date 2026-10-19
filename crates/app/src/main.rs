@@ -11,7 +11,7 @@ mod theme;
 mod screens;
 
 use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png, trim};
-use launcher_core::catalog::{APPS, App};
+use launcher_core::catalog::App;
 use launcher_core::platform::Folders;
 use launcher_core::platform::{Installed, Launch, Locate, Opened};
 use launcher_sys::{InstallError, Recent, Stage, System};
@@ -60,8 +60,12 @@ const RECENT_SHOWN: usize = 10;
 
 /// News from the worker threads.
 enum Event {
-    Scanned(Vec<Scanned>),
-    Latest(usize, Latest),
+    /// Results carry the generation of the app list they were asked about, and are dropped
+    /// when the list has changed since.
+    Scanned(u64, Vec<Scanned>),
+    Latest(u64, usize, Latest),
+    /// The website's list of apps, checked, with the text to keep for the next launch.
+    Catalog(String, Vec<App>),
     /// The launcher's own latest release, when it is newer than this one.
     LauncherNewer(String),
     // Installs run from the launcher on macOS only, so far.
@@ -72,6 +76,13 @@ enum Event {
 }
 
 struct Launcher {
+    /// The apps shown, as the list stood when the window last took it (the website's, or the
+    /// built-in one); every per-app list below lines up with it.
+    apps: &'static [App],
+    /// Which list `apps` is; bumped each time the list is replaced.
+    generation: u64,
+    /// A newer list from the website, waiting for the installs to finish before it is shown.
+    pending_list: Option<Vec<App>>,
     found: Vec<Found>,
     latest: Vec<Latest>,
     jobs: Vec<Job>,
@@ -108,13 +119,20 @@ impl Launcher {
     fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
         theme::use_system_font(ctx);
+        // The website's list as last read, until a fresh one arrives (spec §9).
+        if let Some(apps) = saved_catalog() {
+            launcher_core::catalog::set_apps(apps);
+        }
+        let apps = launcher_core::catalog::apps();
         let texture = |name: String, png: &[u8]| decode_png(png).map(|image| ctx.load_texture(name, image, egui::TextureOptions::LINEAR));
-        let marks = APPS.iter().map(|app| texture(format!("mark-{}", app.slug), mark_png(app))).collect();
         let (send, receive) = mpsc::channel();
         let mut launcher = Launcher {
-            found: vec![Found::Looking; APPS.len()],
-            latest: vec![Latest::Unknown; APPS.len()],
-            jobs: vec![Job::Idle; APPS.len()],
+            apps,
+            generation: 0,
+            pending_list: None,
+            found: vec![Found::Looking; apps.len()],
+            latest: vec![Latest::Unknown; apps.len()],
+            jobs: vec![Job::Idle; apps.len()],
             queue: VecDeque::new(),
             confirm: None,
             scanning: false,
@@ -125,8 +143,8 @@ impl Launcher {
             settings: Settings::load(),
             send,
             receive,
-            marks,
-            icons: vec![None; APPS.len()],
+            marks: load_marks(ctx, apps),
+            icons: vec![None; apps.len()],
             wordmark: [texture("wordmark".into(), WORDMARK), texture("wordmark-dark".into(), WORDMARK_DARK)],
             details: HashSet::new(),
             notice: None,
@@ -151,9 +169,9 @@ impl Launcher {
             return;
         }
         self.scanning = true;
-        let (send, ctx) = (self.send.clone(), ctx.clone());
+        let (send, ctx, apps, generation) = (self.send.clone(), ctx.clone(), self.apps, self.generation);
         std::thread::spawn(move || {
-            let found = APPS
+            let found = apps
                 .iter()
                 .map(|app| {
                     let installed = System.locate(app);
@@ -161,17 +179,28 @@ impl Launcher {
                     (installed, icon, System.recent_files(app))
                 })
                 .collect();
-            let _ = send.send(Event::Scanned(found));
+            let _ = send.send(Event::Scanned(generation, found));
             ctx.request_repaint();
         });
     }
 
-    /// Reads every released app's latest version (spec §5.1), each on its own thread.
+    /// Asks every app's repository for its latest release (spec §5.1), each on its own thread,
+    /// so a first release shows up without a new launcher; and reads the suite's list of apps
+    /// from its website, so a new app does too (spec §9).
     fn check_latest(&mut self, ctx: &egui::Context) {
         if self.checking > 0 {
             return;
         }
-        self.checking = APPS.iter().filter(|a| a.released).count();
+        self.checking = self.apps.len();
+        {
+            let (send, ctx) = (self.send.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                if let Some((json, apps)) = System.website_catalog() {
+                    let _ = send.send(Event::Catalog(json, apps));
+                    ctx.request_repaint();
+                }
+            });
+        }
         {
             let (send, ctx) = (self.send.clone(), ctx.clone());
             std::thread::spawn(move || {
@@ -183,11 +212,16 @@ impl Launcher {
                 }
             });
         }
-        for (index, app) in APPS.iter().enumerate().filter(|(_, a)| a.released) {
-            let (send, ctx) = (self.send.clone(), ctx.clone());
+        for (index, app) in self.apps.iter().enumerate() {
+            let (send, ctx, generation) = (self.send.clone(), ctx.clone(), self.generation);
             std::thread::spawn(move || {
-                let latest = System.latest_release(app).map_or_else(Latest::Failed, Latest::Release);
-                let _ = send.send(Event::Latest(index, latest));
+                let latest = match System.latest_release(app) {
+                    Ok(None) => Latest::NoRelease,
+                    Ok(Some((release, true))) => Latest::Release(release),
+                    Ok(Some((release, false))) => Latest::NoInstaller(release),
+                    Err(e) => Latest::Failed(e),
+                };
+                let _ = send.send(Event::Latest(generation, index, latest));
                 ctx.request_repaint();
             });
         }
@@ -196,8 +230,17 @@ impl Launcher {
     fn take_events(&mut self, ctx: &egui::Context) {
         while let Ok(event) = self.receive.try_recv() {
             match event {
-                Event::Scanned(found) => {
-                    self.icons = APPS
+                Event::Scanned(generation, _) if generation != self.generation => {}
+                Event::Latest(generation, ..) if generation != self.generation => {}
+                Event::Catalog(json, apps) => {
+                    save_catalog(&json);
+                    if apps != self.apps {
+                        self.pending_list = Some(apps);
+                    }
+                }
+                Event::Scanned(_, found) => {
+                    self.icons = self
+                        .apps
                         .iter()
                         .zip(&found)
                         .map(|(app, (_, icon, _))| {
@@ -212,7 +255,7 @@ impl Launcher {
                     self.found = found.into_iter().map(|(f, _, _)| f.map_or(Found::Missing, Found::Installed)).collect();
                     self.scanning = false;
                 }
-                Event::Latest(index, latest) => {
+                Event::Latest(_, index, latest) => {
                     set(&mut self.latest, index, latest);
                     self.checking = self.checking.saturating_sub(1);
                     if self.checking == 0 {
@@ -222,7 +265,7 @@ impl Launcher {
                 Event::LauncherNewer(version) => self.launcher_newer = Some(version),
                 Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
                 Event::Done(index, result) => {
-                    let app = APPS.get(index).map_or("The app", |a| a.name);
+                    let app = self.apps.get(index).map_or("The app", |a| a.name);
                     match result {
                         Ok(installed) => {
                             set(&mut self.jobs, index, Job::Idle);
@@ -239,6 +282,29 @@ impl Launcher {
         }
     }
 
+    /// Shows a new list of apps once no install is running or waiting, and looks again.
+    fn take_pending_list(&mut self, ctx: &egui::Context) {
+        if self.pending_list.is_none() || self.busy() || !self.queue.is_empty() || self.confirm.is_some() {
+            return;
+        }
+        let Some(apps) = self.pending_list.take() else { return };
+        launcher_core::catalog::set_apps(apps);
+        let apps = launcher_core::catalog::apps();
+        self.apps = apps;
+        self.generation += 1;
+        self.found = vec![Found::Looking; apps.len()];
+        self.latest = vec![Latest::Unknown; apps.len()];
+        self.jobs = vec![Job::Idle; apps.len()];
+        self.icons = vec![None; apps.len()];
+        self.marks = load_marks(ctx, apps);
+        self.recent.clear();
+        self.details.clear();
+        self.scanning = false;
+        self.checking = 0;
+        self.rescan(ctx);
+        self.check_latest(ctx);
+    }
+
     fn busy(&self) -> bool {
         self.jobs.iter().any(|j| matches!(j, Job::Running(_)))
     }
@@ -248,7 +314,7 @@ impl Launcher {
         let running: Vec<usize> = batch
             .iter()
             .copied()
-            .filter(|&i| match (APPS.get(i), self.found.get(i)) {
+            .filter(|&i| match (self.apps.get(i), self.found.get(i)) {
                 (Some(app), Some(Found::Installed(installed))) => System.is_running(app, installed),
                 _ => false,
             })
@@ -275,9 +341,10 @@ impl Launcher {
 
     /// The apps whose main button is Update (or Install over an earlier name): Update all.
     fn updatable(&self) -> Vec<usize> {
-        (0..APPS.len())
+        (0..self.apps.len())
             .filter(|&i| {
-                let (Some(app), Some(found), Some(latest), Some(job)) = (APPS.get(i), self.found.get(i), self.latest.get(i), self.jobs.get(i)) else {
+                let (Some(app), Some(found), Some(latest), Some(job)) = (self.apps.get(i), self.found.get(i), self.latest.get(i), self.jobs.get(i))
+                else {
                     return false;
                 };
                 matches!(found, Found::Installed(_))
@@ -289,7 +356,7 @@ impl Launcher {
     /// The question before quitting open apps (spec §5.1).
     fn confirm_quit(&mut self, ctx: &egui::Context) {
         let Some((batch, running)) = self.confirm.clone() else { return };
-        let names: Vec<&str> = running.iter().filter_map(|&i| APPS.get(i).map(|a| a.name)).collect();
+        let names: Vec<&str> = running.iter().filter_map(|&i| self.apps.get(i).map(|a| a.name)).collect();
         let (title, body) = match names.as_slice() {
             [one] => (
                 format!("Quit {one} and update it?"),
@@ -333,7 +400,7 @@ impl Launcher {
 
     #[cfg(target_os = "macos")]
     fn start_install(&mut self, ctx: &egui::Context, index: usize, quit: bool) {
-        let Some(app) = APPS.get(index) else { return };
+        let Some(app) = self.apps.get(index) else { return };
         let current = match self.found.get(index) {
             Some(Found::Installed(installed)) => Some(installed.clone()),
             _ => None,
@@ -355,7 +422,7 @@ impl Launcher {
 
     #[cfg(not(target_os = "macos"))]
     fn start_install(&mut self, _ctx: &egui::Context, index: usize, _quit: bool) {
-        if let Some(app) = APPS.get(index) {
+        if let Some(app) = self.apps.get(index) {
             self.link(&app.releases_url());
         }
     }
@@ -378,7 +445,7 @@ impl Launcher {
     /// installed are named as skipped. No app's settings change.
     fn demo(&mut self) {
         let (mut opened, mut open_already, mut skipped, mut failed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for (app, found) in APPS.iter().zip(&self.found) {
+        for (app, found) in self.apps.iter().zip(&self.found) {
             let Found::Installed(installed) = found else {
                 skipped.push(short_name(app));
                 continue;
@@ -405,7 +472,7 @@ impl Launcher {
     /// Whether the app at `index` has a second line to show (detail or a failure).
     fn has_detail(&self, index: usize) -> bool {
         let (Some(app), Some(found), Some(latest), Some(job)) =
-            (APPS.get(index), self.found.get(index), self.latest.get(index), self.jobs.get(index))
+            (self.apps.get(index), self.found.get(index), self.latest.get(index), self.jobs.get(index))
         else {
             return false;
         };
@@ -556,7 +623,7 @@ impl Launcher {
                     if n > 0 {
                         ui.separator();
                     }
-                    let Some(app) = APPS.get(*index) else { continue };
+                    let Some(app) = self.apps.get(*index) else { continue };
                     let installed = match self.found.get(*index) {
                         Some(Found::Installed(installed)) => Some(installed.clone()),
                         _ => None,
@@ -659,6 +726,7 @@ impl eframe::App for Launcher {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.take_events(&ctx);
+        self.take_pending_list(&ctx);
         // Look again when the window comes forward: an app may have been installed meanwhile.
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         if focused && !self.focused {
@@ -736,7 +804,7 @@ impl eframe::App for Launcher {
             ui.add_space(24.0);
             egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
                 let columns = if ui.available_width() >= TWO_COLUMNS_FROM { 2 } else { 1 };
-                for (row, chunk) in APPS.chunks(columns).enumerate() {
+                for (row, chunk) in self.apps.chunks(columns).enumerate() {
                     if row > 0 {
                         ui.add_space(CARD_GAP);
                     }
@@ -852,6 +920,34 @@ fn demo_note(opened: &[&str], open_already: &[&str], skipped: &[&str], failed: &
         parts.push(format!("Skipped {}, which {verb} installed.", and_list(skipped)));
     }
     parts.join(" ")
+}
+
+/// Each app's mark as a texture; an app the launcher has no mark for draws its accent.
+fn load_marks(ctx: &egui::Context, apps: &[App]) -> Vec<Option<egui::TextureHandle>> {
+    apps.iter()
+        .map(|app| {
+            mark_png(app).and_then(decode_png).map(|image| ctx.load_texture(format!("mark-{}", app.slug), image, egui::TextureOptions::LINEAR))
+        })
+        .collect()
+}
+
+/// Where the website's list is kept between launches.
+fn catalog_path() -> Option<PathBuf> {
+    System.data().map(|d| d.join("catalog.json"))
+}
+
+/// The website's list as last read, checked again; `None` without one.
+fn saved_catalog() -> Option<Vec<App>> {
+    launcher_core::catalog::parse_remote(&std::fs::read_to_string(catalog_path()?).ok()?)
+}
+
+fn save_catalog(json: &str) {
+    if let Some(path) = catalog_path() {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, json);
+    }
 }
 
 /// A folder with the home folder shown as `~`.

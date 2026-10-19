@@ -1568,7 +1568,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "launcher-core",
  "launcher-sys",
@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "sha2",
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-sys"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "launcher-core",
 ]
@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "method-launcher"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3875,7 +3875,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "zbus"

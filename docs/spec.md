@@ -411,14 +411,24 @@ technical reason, selectable) and Try Again where retrying could help.
 
 ## 9. Where things come from
 
-- **The catalog** is built into the launcher (`crates/core/src/catalog.rs`), kept in step
-  with the website's `apps.toml` by hand for now. Installer names are derived from the app's
-  noun per target (§2), and a test checks every entry: names, bundle id
-  `com.method<noun>.desktop`, an https repository under `method-production-suite`. If the
-  suite publishes the catalog on methodproduction.com, the launcher can read it later, with
-  the built-in copy as the fallback (§11).
+- **The catalog** (from 0.1.1) is read from the suite's website,
+  `https://methodproduction.com/apps.json`, made from the website's `apps.toml`: a list, in
+  the order to show, of `{"slug", "name", "tagline", "repo", "bundle_id", "site", "accent":
+  ["#light", "#dark"]}` (extra fields are ignored). Every entry must follow the suite's rules
+  ("Method <Noun>", slug, `com.method<noun>.desktop`, a `method-` repository under the
+  organisation, an https `.com` site, two `#RRGGBB` accents), or the whole list is refused.
+  The last good list is kept for the next launch; the built-in list
+  (`crates/core/src/catalog.rs`, tested by the same rules) is the fallback. A new list is
+  shown only when no install is running. An app the launcher has no mark for draws its
+  accent.
+- **Releases are read at run time** (from 0.1.1). An app has a release when its
+  `releases/latest` redirects to a version tag; it has an installer for this system when the
+  release's `SHA256SUMS` (or, for older releases, `SHA256SUMS-app`) lists one. The catalog's
+  `released` flag is only the fallback when the repository can't be asked. So a first
+  release shows up on the next check, with no new launcher.
 - **Network**: only `github.com` and GitHub's release-asset hosts, for manifests, checksums
-  and downloads; links a person clicks open in their browser. https only. The list is a
+  and downloads, and `methodproduction.com`, for the list of apps; links a person clicks
+  open in their browser. https only. The list is a
   constant in code with a test.
 
 ### 9.1 What the current releases carry (2026-10-18)

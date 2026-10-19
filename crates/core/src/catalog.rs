@@ -1,8 +1,15 @@
-//! The suite's apps, built into the launcher (docs/spec.md §9). Installer names come from each
-//! app's noun per system (`platform::Kind`). Kept in step with the
-//! website's `apps.toml` by hand; the tests below check every entry's shape.
+//! The suite's apps (docs/spec.md §9). The launcher reads the list from the suite's website
+//! (`apps.json`, made from the website's `apps.toml`), checks every entry with the same rules
+//! the built-in list is tested against, and falls back to the built-in list ([`BUILT_IN`])
+//! when the website can't be reached or says something unexpected. Installer names come from
+//! each app's noun per system (`platform::Kind`). Whether an app has a release is decided at
+//! run time from its repository (docs/spec.md §5.1); `released` is only the offline fallback.
 
 use crate::platform::Kind;
+use std::sync::RwLock;
+
+/// Where the suite publishes its list of apps.
+pub const CATALOG_URL: &str = "https://methodproduction.com/apps.json";
 
 /// GitHub organisation every app's repository lives in.
 pub const ORG: &str = "method-production-suite";
@@ -36,7 +43,8 @@ pub struct App {
     pub repo: &'static str,
     /// The app's macOS bundle identifier.
     pub bundle_id: &'static str,
-    /// Whether the app has a published release to install from yet.
+    /// Whether the app had a published release when this list was made: the fallback when
+    /// its repository can't be asked.
     pub released: bool,
     /// The app's site.
     pub site: &'static str,
@@ -72,9 +80,10 @@ impl App {
         format!("https://github.com/{ORG}/{}#build-from-source", self.repo)
     }
 
-    /// The installer's file name for this kind, or `None` while there is no release yet.
+    /// The installer's file name for this kind. Whether the latest release has it is asked of
+    /// the release itself (its `SHA256SUMS`), at run time.
     pub fn installer(&self, kind: Kind) -> Option<String> {
-        self.released.then(|| kind.file_name(self.noun()))
+        Some(kind.file_name(self.noun()))
     }
 
     /// The URL of the latest release, which redirects to its tag (spec §4.1 step 1).
@@ -99,14 +108,16 @@ impl App {
 }
 
 /// The apps in the order of a production: write, read, schedule, budget.
-pub const APPS: [App; 4] = [
+/// The apps as built into this launcher, in the order of a production.
+pub const BUILT_IN: [App; 4] = [
     App {
         slug: "storyteller",
         name: "Method Storyteller",
         tagline: "Screenwriting that formats itself.",
         repo: "method-storyteller",
         bundle_id: "com.methodstoryteller.desktop",
-        released: false,
+        // First release 0.2.0, 2026-10-19.
+        released: true,
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
@@ -149,12 +160,98 @@ pub const APPS: [App; 4] = [
 
 /// The app with this slug.
 pub fn by_slug(slug: &str) -> Option<&'static App> {
-    APPS.iter().find(|app| app.slug == slug)
+    apps().iter().find(|app| app.slug == slug)
+}
+
+/// The list in use: the built-in one until [`set_apps`] replaces it.
+static CURRENT: RwLock<&'static [App]> = RwLock::new(&BUILT_IN);
+
+/// The apps the launcher shows now.
+pub fn apps() -> &'static [App] {
+    match CURRENT.read() {
+        Ok(apps) => *apps,
+        Err(poisoned) => *poisoned.into_inner(),
+    }
+}
+
+/// Puts a checked list in use. The list lives for the rest of the run (a few hundred bytes,
+/// replaced at most when the website's list changes).
+pub fn set_apps(apps: Vec<App>) {
+    let apps: &'static [App] = Box::leak(apps.into_boxed_slice());
+    match CURRENT.write() {
+        Ok(mut current) => *current = apps,
+        Err(poisoned) => *poisoned.into_inner() = apps,
+    }
+}
+
+fn leak(text: &str) -> &'static str {
+    Box::leak(text.to_owned().into_boxed_str())
+}
+
+/// Whether an entry follows the suite's rules (SUITE-STANDARDS.md §2): "Method <Noun>", slug
+/// the noun in lower case, bundle id `com.method<noun>.desktop`, a `method-` repository under
+/// [`ORG`], an https site, and two `#RRGGBB` accents. The website's list must pass the same
+/// checks as the built-in one, since it names what the launcher downloads.
+pub fn valid(app: &App) -> bool {
+    let Some(noun) = app.name.strip_prefix("Method ") else { return false };
+    let colour = |c: &str| c.len() == 7 && c.starts_with('#') && c.bytes().skip(1).all(|b| b.is_ascii_hexdigit());
+    !noun.is_empty()
+        && noun.chars().all(|c| c.is_ascii_alphabetic())
+        && noun.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && app.slug == noun.to_lowercase()
+        && app.bundle_id == format!("com.method{}.desktop", app.slug)
+        && app.repo.strip_prefix("method-").is_some_and(|r| !r.is_empty() && r.bytes().all(|b| b.is_ascii_lowercase() || b == b'-'))
+        && app.site.strip_prefix("https://").is_some_and(|host| !host.is_empty() && !host.contains(['/', '@', ':', ' ']) && host.ends_with(".com"))
+        && !app.tagline.is_empty()
+        && app.tagline.len() <= 120
+        && colour(app.accent.0)
+        && colour(app.accent.1)
+}
+
+/// The website's `apps.json`: a list of `{"slug", "name", "tagline", "repo", "bundle_id",
+/// "site", "accent": ["#light", "#dark"]}` in the order to show (extra fields are ignored).
+/// Every entry must pass [`valid`], slugs must be unique, and there must be at least one app;
+/// otherwise the whole list is refused. An app the launcher also knows keeps its built-in
+/// earlier name and release fallback.
+pub fn parse_remote(json: &str) -> Option<Vec<App>> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let items = match &value {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map.get("apps")?.as_array()?.as_slice(),
+        _ => return None,
+    };
+    if items.is_empty() || items.len() > 32 {
+        return None;
+    }
+    let mut apps = Vec::new();
+    for item in items {
+        let text = |key: &str| item.get(key).and_then(|v| v.as_str()).map(str::trim);
+        let accent = item.get("accent")?.as_array()?;
+        let (light, dark) = (accent.first()?.as_str()?, accent.get(1)?.as_str()?);
+        let slug = text("slug")?;
+        let built_in = BUILT_IN.iter().find(|a| a.slug == slug);
+        let app = App {
+            slug: leak(slug),
+            name: leak(text("name")?),
+            tagline: leak(text("tagline")?),
+            repo: leak(text("repo")?),
+            bundle_id: leak(text("bundle_id")?),
+            released: built_in.is_none_or(|a| a.released),
+            site: leak(text("site")?),
+            accent: (leak(light), leak(dark)),
+            legacy: built_in.and_then(|a| a.legacy),
+        };
+        if !valid(&app) || apps.iter().any(|a: &App| a.slug == app.slug) {
+            return None;
+        }
+        apps.push(app);
+    }
+    Some(apps)
 }
 
 /// The app with this bundle identifier.
 pub fn by_bundle_id(id: &str) -> Option<&'static App> {
-    APPS.iter().find(|app| app.bundle_id == id)
+    apps().iter().find(|app| app.bundle_id == id)
 }
 
 #[cfg(test)]
@@ -162,8 +259,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_built_in_list_passes_the_same_checks_as_the_websites() {
+        for app in &BUILT_IN {
+            assert!(valid(app), "{}", app.slug);
+        }
+    }
+
+    const REMOTE: &str = r##"{"apps":[
+        {"slug":"storyteller","name":"Method Storyteller","tagline":"Screenwriting that formats itself.","repo":"method-storyteller","bundle_id":"com.methodstoryteller.desktop","site":"https://methodstoryteller.com","accent":["#AE3D56","#EE8DA2"],"status":"Beta"},
+        {"slug":"reader","name":"Method Reader","tagline":"Screenplay PDFs into e-books.","repo":"method-reader","bundle_id":"com.methodreader.desktop","site":"https://methodreader.com","accent":["#7052BA","#B49CF0"]},
+        {"slug":"office","name":"Method Office","tagline":"A new app.","repo":"method-office","bundle_id":"com.methodoffice.desktop","site":"https://methodoffice.com","accent":["#123456","#ABCDEF"]}
+    ]}"##;
+
+    #[test]
+    fn reads_the_websites_list() {
+        let apps = parse_remote(REMOTE).unwrap();
+        assert_eq!(apps.iter().map(|a| a.slug).collect::<Vec<_>>(), ["storyteller", "reader", "office"]);
+        // A known app keeps its earlier name; a new one starts with no fallback release.
+        assert!(apps[1].legacy.is_some());
+        assert!(apps[2].released && apps[2].legacy.is_none());
+        assert_eq!(apps[2].installer(Kind::Dmg).as_deref(), Some("Method-Office-macOS.dmg"));
+    }
+
+    #[test]
+    fn refuses_a_list_with_any_bad_entry() {
+        for (from, to) in [
+            ("\"repo\":\"method-office\"", "\"repo\":\"someone-else/x\""),
+            ("com.methodoffice.desktop", "com.example.desktop"),
+            ("https://methodoffice.com", "http://methodoffice.com"),
+            ("https://methodoffice.com", "https://evil.example/methodoffice.com"),
+            ("\"name\":\"Method Office\"", "\"name\":\"Office\""),
+            ("#123456", "red"),
+            ("\"slug\":\"reader\"", "\"slug\":\"storyteller\""),
+        ] {
+            assert_eq!(parse_remote(&REMOTE.replace(from, to)), None, "{to}");
+        }
+        assert_eq!(parse_remote("[]"), None);
+        assert_eq!(parse_remote("not json"), None);
+    }
+
+    #[test]
     fn names_follow_the_suite_pattern() {
-        for app in &APPS {
+        for app in &BUILT_IN {
             let noun = app.noun();
             assert!(app.name.starts_with("Method ") && !noun.contains(' '), "{}: not \"Method <Noun>\"", app.name);
             assert_eq!(app.slug, noun.to_lowercase());
@@ -181,10 +318,12 @@ mod tests {
     }
 
     #[test]
-    fn installers_only_once_released() {
+    fn installers_are_named_whatever_the_fallback_says() {
         let budget = by_slug("budget").unwrap();
         assert_eq!(budget.installer(Kind::SetupExe).as_deref(), Some("Method-Budget-windows-x64-setup.exe"));
-        assert_eq!(by_slug("storyteller").unwrap().installer(Kind::Dmg), None);
+        // An app built in as unreleased can still be installed once its release is found.
+        let unreleased = App { released: false, ..*budget };
+        assert_eq!(unreleased.installer(Kind::Dmg).as_deref(), Some("Method-Budget-macOS.dmg"));
     }
 
     #[test]
@@ -196,14 +335,14 @@ mod tests {
             "https://github.com/method-production-suite/method-budget/releases/download/v0.4.0/SHA256SUMS"
         );
         assert_eq!(budget.manifest_url(), "https://github.com/method-production-suite/method-budget/releases/latest/download/latest.json");
-        for app in &APPS {
+        for app in &BUILT_IN {
             assert!(crate::net::is_allowed(&app.manifest_url()) && crate::net::is_allowed(&app.latest_url()));
         }
     }
 
     #[test]
     fn slugs_and_ids_are_unique_and_found() {
-        for app in &APPS {
+        for app in &BUILT_IN {
             assert_eq!(by_slug(app.slug), Some(app));
             assert_eq!(by_bundle_id(app.bundle_id), Some(app));
         }
@@ -212,7 +351,7 @@ mod tests {
 
     #[test]
     fn accents_are_colours() {
-        for app in &APPS {
+        for app in &BUILT_IN {
             for c in [app.accent.0, app.accent.1] {
                 assert!(c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit()), "{c}");
             }

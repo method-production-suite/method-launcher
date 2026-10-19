@@ -386,7 +386,7 @@ pub fn clean_up(dirs: &[PathBuf]) {
     for dir in dirs {
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let ours = launcher_core::catalog::APPS.iter().any(|a| name.starts_with(&format!(".{}.", a.bundle_name())));
+            let ours = launcher_core::catalog::apps().iter().any(|a| name.starts_with(&format!(".{}.", a.bundle_name())));
             if ours && (name.contains(".installing-") || name.contains(".replaced-")) && stale(&entry.path()) {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
