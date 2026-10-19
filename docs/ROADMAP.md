@@ -35,8 +35,25 @@ None open. Decided by the owner, 2026-10-18:
 
 ### Tests that need the owner's hands
 
-None yet. Before the first release: a real install of each released app from a clean
-account on macOS, Windows and Linux (the list will be here, ready to run).
+**Before 0.1.2: install and update on a real Windows and a real Linux machine.** They are
+built and tested on CI, but no one has run them on those systems yet. Ready to run, on each
+machine, with the launcher built from `main` (`cargo run --locked -p method-launcher`) or
+from its command line:
+
+1. Windows x64: `method-launcher install schedule`. The setup opens; finish it. Expect
+   "installed Method Schedule ..." and Schedule in the Start menu. Then in the window:
+   Schedule shows its version and Open works.
+2. Windows, update: with an older Schedule installed and open, click Update to X. Expect the
+   question first, Schedule asked to close, then the new version.
+3. Linux x86_64: `method-launcher install schedule`. Expect
+   `~/Applications/Method-Schedule.AppImage`, "Method Schedule" in the desktop's app menu
+   with its icon, and the version on its card.
+4. Linux, update: the same as step 2, over the AppImage.
+5. On both: a release without a checksum file (or a tampered download) is refused with "This
+   release can't be checked yet" or "doesn't match the release's checksum".
+
+**Still to try on the Mac:** Update over an app that is open (the quit question), and an
+install that needs the administrator prompt.
 
 ### Release go-aheads
 
