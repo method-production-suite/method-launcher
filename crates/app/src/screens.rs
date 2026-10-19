@@ -8,7 +8,7 @@ use egui_kittest::Harness;
 use launcher_core::catalog::APPS;
 use std::path::{Path, PathBuf};
 
-const SIZE: egui::Vec2 = egui::vec2(1000.0, 680.0);
+const SIZE: egui::Vec2 = egui::vec2(1000.0, 1000.0);
 
 #[test]
 #[ignore = "pictures, run by hand"]
@@ -41,6 +41,17 @@ fn screens() {
         }
         if behind && let Some(crate::state::Found::Installed(budget)) = harness.state_mut().found.get_mut(3) {
             budget.version = "0.2.0".into();
+        }
+        // Invented recent files only: never the real ones on this computer.
+        {
+            let day = std::time::Duration::from_secs(86_400);
+            let now = std::time::SystemTime::now();
+            let file = |app: usize, path: &str, ago: u32| (app, launcher_sys::Recent { path: path.into(), opened: now - day * ago });
+            harness.state_mut().recent = vec![
+                file(3, "/Users/you/Films/Field Station/Field Station budget.mthd", 0),
+                file(1, "/Users/you/Films/Field Station/Field Station.pdf", 1),
+                file(2, "/Users/you/Films/Field Station/Field Station schedule.mtsc", 3),
+            ];
         }
         if name.starts_with("demo") {
             // The note Demo the suite leaves; the button itself is never pressed here, as it

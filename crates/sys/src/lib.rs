@@ -133,6 +133,34 @@ impl System {
     }
 }
 
+/// A file an app opened lately, with when (the list's time, or else the file's own).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recent {
+    pub path: PathBuf,
+    pub opened: std::time::SystemTime,
+}
+
+impl System {
+    /// The files `app` lists in its `recent.json` that still exist, newest first (spec §6).
+    /// The list is only read; a missing or unreadable one is no files.
+    pub fn recent_files(&self, app: &App) -> Vec<Recent> {
+        let Some(json) = self.app_data(app).into_iter().find_map(|dir| std::fs::read_to_string(dir.join("recent.json")).ok()) else {
+            return Vec::new();
+        };
+        launcher_core::recent::parse(&json)
+            .into_iter()
+            .filter(|e| e.path.is_file())
+            .filter_map(|e| {
+                let opened = match e.opened {
+                    Some(secs) => std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(u64::try_from(secs).ok()?))?,
+                    None => std::fs::metadata(&e.path).and_then(|m| m.modified()).ok()?,
+                };
+                Some(Recent { path: e.path, opened })
+            })
+            .collect()
+    }
+}
+
 impl Folders for System {
     fn cache(&self) -> Option<PathBuf> {
         os::cache_root().map(|root| root.join(LAUNCHER_ID))

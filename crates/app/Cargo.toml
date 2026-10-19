@@ -21,6 +21,7 @@ launcher-sys = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
 png = "0.18"
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # Draws the window to an image with no window, for the pictures test in src/screens.rs.

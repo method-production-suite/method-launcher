@@ -140,6 +140,10 @@ Each one updates itself." Nothing installs on its own.
 
 ### 3.4 Settings
 
+In 0.1.0 the one setting, "Check for updates automatically", is a switch at the foot of the
+window, saved in `settings.json` in the launcher's data folder; the rest of this section
+comes with the Settings window.
+
 Method Launcher > Settings on macOS; File > Settings on Windows and Linux.
 
 - "Check for updates automatically" (on by default, SUITE-STANDARDS.md §1).
