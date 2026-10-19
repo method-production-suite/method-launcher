@@ -8,3 +8,9 @@ Dependencies
 The Rust crates this app is built from keep their own licences, all compatible with MIT OR
 Apache-2.0 (deny.toml lists the ones allowed). egui's interface fonts are under the SIL Open
 Font License 1.1 and the Ubuntu Font Licence 1.0.
+
+Pictures
+
+assets/apps/*.png: each suite app's mark, from that app's site, by the Method Production
+  Suite Team, under the same licences. packaging/icons/: the launcher's icon, drawn by
+  scripts/make-icons.py.

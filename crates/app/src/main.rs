@@ -6,7 +6,7 @@
 use launcher_core::catalog::{APPS, App};
 use launcher_core::platform::{Installed, Launch, Locate, Opened, Target};
 use launcher_sys::System;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 #[cfg(test)]
 mod screens;
@@ -21,9 +21,57 @@ fn main() -> eframe::Result<()> {
         println!("method-launcher-app {} ({APP_NAME})", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([960.0, 640.0]).with_min_inner_size([720.0, 520.0]);
+    let mut viewport = egui::ViewportBuilder::default().with_title(APP_NAME).with_inner_size([960.0, 640.0]).with_min_inner_size([720.0, 520.0]);
+    if let Some(icon) = decode_png(WINDOW_ICON) {
+        viewport =
+            viewport.with_icon(Arc::new(egui::IconData { width: icon.width() as u32, height: icon.height() as u32, rgba: icon.as_raw().to_vec() }));
+    }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(Launcher::new(&cc.egui_ctx)))))
+}
+
+/// The launcher's own icon, drawn by scripts/make-icons.py.
+const WINDOW_ICON: &[u8] = include_bytes!("../../../packaging/icons/icon-256.png");
+
+/// Each app's mark (its site's touch icon), drawn when its own icon can't be read.
+fn mark_png(app: &App) -> &'static [u8] {
+    match app.slug {
+        "storyteller" => include_bytes!("../../../assets/apps/storyteller.png"),
+        "reader" => include_bytes!("../../../assets/apps/reader.png"),
+        "schedule" => include_bytes!("../../../assets/apps/schedule.png"),
+        _ => include_bytes!("../../../assets/apps/budget.png"),
+    }
+}
+
+/// A PNG as an image egui can draw; `None` if it isn't a PNG it can read.
+fn decode_png(bytes: &[u8]) -> Option<egui::ColorImage> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().ok()?;
+    let mut buffer = vec![0; reader.output_buffer_size()?];
+    let frame = reader.next_frame(&mut buffer).ok()?;
+    let pixels = buffer.get(..frame.buffer_size())?;
+    let rgba: Vec<u8> = match frame.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => pixels
+            .chunks_exact(3)
+            .flat_map(|p| match *p {
+                [r, g, b] => [r, g, b, 255],
+                _ => [0; 4],
+            })
+            .collect(),
+        png::ColorType::GrayscaleAlpha => pixels
+            .chunks_exact(2)
+            .flat_map(|p| match *p {
+                [g, a] => [g, g, g, a],
+                _ => [0; 4],
+            })
+            .collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => return None,
+    };
+    let size = [frame.width as usize, frame.height as usize];
+    (rgba.len() == size[0] * size[1] * 4).then(|| egui::ColorImage::from_rgba_unmultiplied(size, &rgba))
 }
 
 /// What the launcher knows about one app on this computer.
@@ -34,9 +82,15 @@ enum Found {
     Missing,
 }
 
+/// One app as a search found it: where it is, and its own icon if it could be read.
+type Scanned = (Option<Installed>, Option<egui::ColorImage>);
+
 struct Launcher {
     found: Vec<Found>,
-    scan: Option<mpsc::Receiver<Vec<Option<Installed>>>>,
+    scan: Option<mpsc::Receiver<Vec<Scanned>>>,
+    /// Each app's mark, and its own icon once found installed, ready to draw.
+    marks: Vec<Option<egui::TextureHandle>>,
+    icons: Vec<Option<egui::TextureHandle>>,
     /// One line about the last thing the person did, and whether it went wrong.
     notice: Option<(String, bool)>,
     focused: bool,
@@ -44,7 +98,12 @@ struct Launcher {
 
 impl Launcher {
     fn new(ctx: &egui::Context) -> Self {
-        let mut launcher = Launcher { found: vec![Found::Looking; APPS.len()], scan: None, notice: None, focused: true };
+        let marks = APPS
+            .iter()
+            .map(|app| decode_png(mark_png(app)).map(|image| ctx.load_texture(format!("mark-{}", app.slug), image, egui::TextureOptions::LINEAR)))
+            .collect();
+        let mut launcher =
+            Launcher { found: vec![Found::Looking; APPS.len()], scan: None, marks, icons: vec![None; APPS.len()], notice: None, focused: true };
         launcher.rescan(ctx);
         launcher
     }
@@ -57,17 +116,29 @@ impl Launcher {
         let (send, receive) = mpsc::channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let found = APPS.iter().map(|app| System.locate(app)).collect();
+            let found: Vec<Scanned> = APPS
+                .iter()
+                .map(|app| {
+                    let installed = System.locate(app);
+                    let icon = installed.as_ref().and_then(|i| System.app_icon(app, i)).and_then(|png| decode_png(&png));
+                    (installed, icon)
+                })
+                .collect();
             let _ = send.send(found);
             ctx.request_repaint();
         });
         self.scan = Some(receive);
     }
 
-    fn take_scan(&mut self) {
+    fn take_scan(&mut self, ctx: &egui::Context) {
         let Some(receive) = &self.scan else { return };
         if let Ok(found) = receive.try_recv() {
-            self.found = found.into_iter().map(|f| f.map_or(Found::Missing, Found::Installed)).collect();
+            self.icons = APPS
+                .iter()
+                .zip(&found)
+                .map(|(app, (_, icon))| icon.clone().map(|image| ctx.load_texture(format!("icon-{}", app.slug), image, egui::TextureOptions::LINEAR)))
+                .collect();
+            self.found = found.into_iter().map(|(f, _)| f.map_or(Found::Missing, Found::Installed)).collect();
             self.scan = None;
         }
     }
@@ -97,11 +168,20 @@ impl Launcher {
     fn card(&mut self, ui: &mut egui::Ui, index: usize, app: &App) {
         let accent = colour(if ui.visuals().dark_mode { app.accent.1 } else { app.accent.0 });
         let found = self.found.get(index).cloned().unwrap_or(Found::Looking);
+        let picture = self.icons.get(index).cloned().flatten().or_else(|| self.marks.get(index).cloned().flatten());
         egui::Frame::group(ui.style()).inner_margin(12.0).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 8.0, accent);
+                let size = egui::vec2(48.0, 48.0);
+                match &picture {
+                    Some(texture) => {
+                        ui.add(egui::Image::new((texture.id(), size)).corner_radius(10.0));
+                    }
+                    None => {
+                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 10.0, accent);
+                    }
+                }
                 ui.vertical(|ui| {
                     ui.heading(app.name);
                     ui.label(app.tagline);
@@ -194,7 +274,7 @@ fn colour(hex: &str) -> egui::Color32 {
 impl eframe::App for Launcher {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.take_scan();
+        self.take_scan(&ctx);
         // Look again when the window comes forward: an app may have been installed meanwhile.
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         if focused && !self.focused {

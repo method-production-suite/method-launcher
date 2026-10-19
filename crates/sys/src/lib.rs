@@ -60,6 +60,15 @@ impl Launch for System {
     }
 }
 
+impl System {
+    /// An installed app's own icon as PNG bytes, about 256 pixels, if this system can read it
+    /// (macOS today: the bundle's `.icns`). Cached under the launcher's cache folder.
+    pub fn app_icon(&self, app: &App, installed: &Installed) -> Option<Vec<u8>> {
+        let cache = self.cache()?.join("icons");
+        os::app_icon(app, installed, &cache)
+    }
+}
+
 impl Folders for System {
     fn cache(&self) -> Option<PathBuf> {
         os::cache_root().map(|root| root.join(LAUNCHER_ID))

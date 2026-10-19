@@ -12,6 +12,7 @@ use std::process::Command;
 const PLUTIL: &str = "/usr/bin/plutil";
 const MDFIND: &str = "/usr/bin/mdfind";
 const PGREP: &str = "/usr/bin/pgrep";
+const SIPS: &str = "/usr/bin/sips";
 
 fn application_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![PathBuf::from("/Applications")];
@@ -93,6 +94,27 @@ pub fn show_location(path: &Path) -> Result<(), String> {
 
 pub fn open_url(url: &str) -> Result<(), String> {
     run(Command::new(OPEN).arg(url))
+}
+
+/// The bundle's `.icns` (named by `CFBundleIconFile`), converted to a 256-pixel PNG by `sips`
+/// and kept in `cache`, named by app and version so an update draws its new icon.
+pub fn app_icon(app: &App, installed: &Installed, cache: &Path) -> Option<Vec<u8>> {
+    let mut name = info(&installed.path, "CFBundleIconFile")?;
+    if Path::new(&name).extension().is_none() {
+        name.push_str(".icns");
+    }
+    let icns = installed.path.join("Contents/Resources").join(&name);
+    if !icns.is_file() {
+        return None;
+    }
+    let version: String = installed.version.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.').collect();
+    let png = cache.join(format!("{}-{version}{}.png", app.slug, if installed.legacy { "-earlier" } else { "" }));
+    if !png.is_file() {
+        std::fs::create_dir_all(cache).ok()?;
+        let (icns, out) = (icns.to_string_lossy(), png.to_string_lossy());
+        output(SIPS, &["-s", "format", "png", "-Z", "256", &icns, "--out", &out])?;
+    }
+    std::fs::read(&png).ok()
 }
 
 pub fn cache_root() -> Option<PathBuf> {

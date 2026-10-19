@@ -66,6 +66,12 @@ pub fn open_url(url: &str) -> Result<(), String> {
     run(Command::new(system32("rundll32.exe")).arg("url.dll,FileProtocolHandler").arg(url))
 }
 
+/// Installed apps' own icons aren't read on this system yet; the launcher draws the app's
+/// mark instead.
+pub fn app_icon(_app: &App, _installed: &Installed, _cache: &Path) -> Option<Vec<u8>> {
+    None
+}
+
 pub fn cache_root() -> Option<PathBuf> {
     env_path("LOCALAPPDATA")
 }
