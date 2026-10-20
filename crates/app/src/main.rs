@@ -119,6 +119,8 @@ struct Launcher {
     help: Option<help::Window>,
     /// Whether the Settings window is open.
     settings_open: bool,
+    /// Whether the launcher opens at login, as the system says, read when Settings opens.
+    opens_at_login: bool,
     focused: bool,
 }
 
@@ -161,6 +163,7 @@ impl Launcher {
             notice: None,
             help: None,
             settings_open: false,
+            opens_at_login: false,
             focused: true,
         };
         // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
@@ -771,7 +774,15 @@ impl Launcher {
         }
     }
 
-    /// Settings (spec §3.4): the update switch, and where and how new installs go.
+    fn open_settings(&mut self) {
+        if !self.settings_open {
+            self.opens_at_login = launcher_sys::login::enabled();
+        }
+        self.settings_open = true;
+    }
+
+    /// Settings (spec §3.4): the update switch, opening at login, and where and how new
+    /// installs go.
     fn settings_window(&mut self, ctx: &egui::Context) {
         let mut open = true;
         let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -788,6 +799,14 @@ impl Launcher {
                 }
                 let muted = ui.visuals().weak_text_color();
                 ui.label(egui::RichText::new("For the launcher and every app. Refresh always checks.").size(12.5).color(muted));
+                ui.add_space(8.0);
+                let mut login = self.opens_at_login;
+                if ui.checkbox(&mut login, "Open the launcher when I log in").changed() {
+                    match launcher_sys::login::set(login) {
+                        Ok(()) => self.opens_at_login = launcher_sys::login::enabled(),
+                        Err(e) => self.notice = Some((format!("The launcher couldn't be set to open at login. {e}"), true)),
+                    }
+                }
                 if cfg!(target_os = "macos") {
                     ui.add_space(12.0);
                     ui.strong("Install apps in");
@@ -895,7 +914,7 @@ impl eframe::App for Launcher {
             self.help = help::show(&ctx, window);
         }
         if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma))) {
-            self.settings_open = true;
+            self.open_settings();
         }
         if self.settings_open {
             self.settings_window(&ctx);
@@ -922,7 +941,7 @@ impl eframe::App for Launcher {
                     self.help_menu(ui, &ctx);
                     let settings = egui::Button::new(egui::RichText::new("Settings").size(15.0)).corner_radius(8.0);
                     if ui.add(settings).clicked() {
-                        self.settings_open = true;
+                        self.open_settings();
                     }
                     let updatable = self.updatable();
                     if installs_here() && !updatable.is_empty() {

@@ -144,7 +144,9 @@ Settings is a window, opened from the Settings button beside Help or with ⌘, (
 Windows and Linux), saved in `settings.json` in the launcher's data folder.
 
 - "Check for updates automatically" (on by default, SUITE-STANDARDS.md §1).
-- "Open the launcher when I log in" (off by default). Not built yet.
+- "Open the launcher when I log in" (off by default): a LaunchAgent in
+  `~/Library/LaunchAgents` on macOS, an entry in `~/.config/autostart` on Linux, and a value
+  under the per-user Run key on Windows. The system's own record is the setting.
 - macOS: "Install apps in: Applications / my Applications folder" (`/Applications` or
   `~/Applications`).
 - Linux on a system with apt: "Install apps as: AppImage in my Applications folder / system

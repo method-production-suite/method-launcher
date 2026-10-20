@@ -61,10 +61,14 @@ from its command line:
 5. On both: a release without a checksum file (or a tampered download) is refused with "This
    release can't be checked yet" or "doesn't match the release's checksum".
 
-**Still to try on the Mac:** Update over an app that is open (the quit question), and an
-install that needs the administrator prompt.
+**Still to try on the Mac:** Update over an app that is open (the quit question), an
+install that needs the administrator prompt, and Settings > "Open the launcher when I log
+in": turn it on, log out and back in, and the launcher opens (the same on Windows and Linux
+with the real-machine test above).
 
 ### Release go-aheads
+
+**0.2.0:** published 2026-10-20 (tag and publish on the owner's yes).
 
 **0.1.2** (release PR #15, merged). In order, before asking for the tag:
 
@@ -126,7 +130,9 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   notarisation, arm64, links) and copy with staging and rename (spec §4.2); updates over
   the installed copy, and replacing an earlier-named copy.
 - **[partial] S** macOS: administrator prompt (built, not yet tried: waiting on the owner's
-  screen) and the `~/Applications` choice in the new Settings window (have).
+  screen) and the `~/Applications` choice in the new Settings window (have). Settings also
+  has "Open the launcher when I log in" on every system (have; tested by unit tests, not yet
+  turned on by a person).
 - **[partial] S** Windows: the setup checked against `SHA256SUMS`, run per user with its own
   window, then confirmed by looking again (spec §4.3). Built and cross-checked, not yet run
   on a Windows machine. Missing: Authenticode, once the suite signs Windows builds.

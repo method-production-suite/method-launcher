@@ -5,6 +5,7 @@
 
 pub mod deb;
 pub mod fetch;
+pub mod login;
 pub mod net;
 pub mod parse;
 
