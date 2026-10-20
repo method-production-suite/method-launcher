@@ -166,8 +166,13 @@ impl Launcher {
             opens_at_login: false,
             focused: true,
         };
-        // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
-        std::thread::spawn(|| System.clean_up());
+        // Leftovers from an install the launcher was quit in the middle of (spec §4.5), and
+        // the login item pointed at the copy running now, so a moved or renamed launcher (a
+        // new AppImage, say) still opens at login.
+        std::thread::spawn(|| {
+            System.clean_up();
+            launcher_sys::login::refresh();
+        });
         launcher.rescan(ctx);
         // One switch for both: the updater's stored choice wins once it has one.
         launcher.settings.check_for_updates = launcher.updates.automatic();
