@@ -2,6 +2,9 @@
 //! secrets): in each job, no step after the first one that reads a secret may run `cargo`,
 //! since a stale fingerprint would rebuild and run build scripts beside the key. Those steps
 //! run the xtask binary built earlier instead.
+//!
+//! A unit test, not one in `tests/`: an integration test makes `cargo test` rebuild the xtask
+//! binary, which Windows can't replace while `cargo xtask ci` is running it.
 
 use std::path::Path;
 

@@ -4,6 +4,8 @@
 //! `package.rs` and docs/RELEASING.md).
 
 mod package;
+#[cfg(test)]
+mod release_workflow;
 mod updater;
 
 use std::path::Path;
