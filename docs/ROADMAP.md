@@ -35,8 +35,9 @@ None open. Decided by the owner, 2026-10-18:
 
 ### Tests that need the owner's hands
 
-**Before 0.1.2: install and update on a real Windows and a real Linux machine.** They are
-built and tested on CI, but no one has run them on those systems yet. Ready to run, on each
+**Install and update on a real Windows and a real Linux machine** (0.1.2 shipped before this
+test, on the owner's yes, 2026-10-20). They are built and tested on CI, but no one has run
+them on those systems yet. Ready to run, on each
 machine, with the launcher built from `main` (`cargo run --locked -p method-launcher`) or
 from its command line:
 
@@ -59,7 +60,8 @@ install that needs the administrator prompt.
 
 **0.1.2** (release PR #15, merged). In order, before asking for the tag:
 
-1. The Windows and Linux test above.
+1. Skipped on the owner's yes (2026-10-20): the Windows and Linux test above, now for after
+   the release.
 2. Done 2026-10-20: the update key's repository secrets are added (the owner's yes, through MOrg).
 3. Done 2026-10-20: the weekly build passed on every system, and the rehearsal on `main`
    passed. Its Mac download and update archive are universal, notarised and stapled, the
@@ -67,7 +69,7 @@ install that needs the administrator prompt.
    and `latest.json` built from it lists both Mac platforms. `SHA256SUMS.minisig` is signed
    only in the draft-release job, which a rehearsal skips: its first real run is the tag,
    and it checks the signature against the app's key before the draft is made.
-4. Then the tag (the owner's yes). Ship it before any app's universal Mac release: launchers
+4. Done 2026-10-20: tagged v0.1.2 on 17953ae (the owner's yes). Publishing is a separate yes. Ship it before any app's universal Mac release: launchers
    0.1.0 and 0.1.1 refuse universal app bundles.
 
 ---
