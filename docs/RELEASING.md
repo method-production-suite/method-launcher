@@ -11,18 +11,18 @@ anything is signed, then makes a DRAFT release with:
 
 | File | What |
 |---|---|
-| `Method-Launcher-macOS.dmg` | macOS, Apple silicon only: Developer ID signed, notarised, stapled |
+| `Method-Launcher-macOS.dmg` | macOS, universal (Intel and Apple silicon): Developer ID signed, notarised, stapled |
 | `Method-Launcher-windows-x64-setup.exe` | Windows x64 installer (unsigned until the suite has a certificate) |
 | `Method-Launcher-linux-amd64.deb` | Debian and Ubuntu |
 | `Method-Launcher-linux-x86_64.AppImage` | any x86_64 Linux |
 | `SHA256SUMS` | every file above |
 | `SHA256SUMS.minisig` | `SHA256SUMS`, signed with the update key |
-| `Method-Launcher_<version>_aarch64.app.tar.gz`, `.sig`, `latest.json` | the self-update for installed launchers on Apple silicon Macs |
+| `Method-Launcher_<version>_universal.app.tar.gz`, `.sig`, `latest.json` | the self-update for installed launchers on every Mac (`darwin-aarch64` and `darwin-x86_64`) |
 
 The names never change, so the website links `releases/latest/download/<file>`. A person
 checks the draft and publishes it.
 
-The launcher updates itself on Apple silicon Macs through the suite's updater,
+The launcher updates itself on Macs (Apple silicon and Intel) through the suite's updater,
 `method-update` (docs/spec.md §5.2), the way the apps do. On Windows and Linux it shows
 "Method Launcher X is available" with a link to the download, until the updater covers them.
 
@@ -42,7 +42,8 @@ The launcher's own minisign key, key ID E115E2CD9AEE0DF9.
   half.
 
 With the key and a notarised Mac build, a release also carries
-`Method-Launcher_<version>_aarch64.app.tar.gz`, its `.sig`, `latest.json` (checked against
+`Method-Launcher_<version>_universal.app.tar.gz`, its `.sig`, `latest.json` (listing it under
+`darwin-aarch64` and `darwin-x86_64`, checked against
 `PUBKEY` before it is written) and `SHA256SUMS.minisig` (the checksums, signed with the same
 key). Without the key the release is the same minus those files, and installed launchers
 don't see it.
@@ -88,7 +89,7 @@ website's launcher page follows the new release.
 The same packaging the workflow runs:
 
 ```bash
-cargo xtask bundle-macos --target aarch64-apple-darwin   # target/bundle/macos/Method Launcher.app, ad hoc signed
+cargo xtask bundle-macos --target universal-apple-darwin # both slices joined by lipo; Method Launcher.app, ad hoc signed
 cargo xtask dmg-macos                                    # target/bundle/macos/Method-Launcher-macOS.dmg
 cargo xtask package-linux                                # the .deb (add --appimagetool and --runtime for the AppImage)
 cargo xtask package-windows                              # the installer (Inno Setup 6)

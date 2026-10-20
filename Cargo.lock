@@ -1702,7 +1702,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "launcher-core",
  "launcher-sys",
@@ -1710,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde_json",
  "sha2 0.11.0",
@@ -1718,7 +1718,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-sys"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "launcher-core",
  "serde_json",
@@ -1823,7 +1823,7 @@ dependencies = [
 
 [[package]]
 name = "method-launcher"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "eframe",
  "egui",
@@ -1838,7 +1838,7 @@ dependencies = [
 [[package]]
 name = "method-update"
 version = "0.1.0"
-source = "git+https://github.com/method-production-suite/method-libs?rev=37a9c8b9801bfcdedb9d79565a62f84fcdfb9a4a#37a9c8b9801bfcdedb9d79565a62f84fcdfb9a4a"
+source = "git+https://github.com/method-production-suite/method-libs?rev=25c80f8cfcc2e5222de4c5b79413a9de488196af#25c80f8cfcc2e5222de4c5b79413a9de488196af"
 dependencies = [
  "base64",
  "flate2",
@@ -3199,7 +3199,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -4292,7 +4292,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64",
  "flate2",

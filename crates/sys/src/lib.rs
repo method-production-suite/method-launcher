@@ -168,11 +168,16 @@ impl System {
         let tag = tag_from_location(&location).ok_or("the latest release has no version tag")?;
         let version = tag.trim_start_matches('v').to_string();
         let mut release = Release { version: version.clone(), date: None, summary: None };
+        // On an Intel Mac, a release whose manifest offers no `darwin-x86_64` update has no
+        // Intel code (every app's releases before it went universal): no install offered.
+        let mut intel_missing = false;
         if let Ok(json) = net::fetch_text(&app.asset_url(&tag, "latest.json"), &scratch("latest.json")?)
             && let Some(found) = manifest(&json)
             && found.version == version
         {
             release = found;
+            intel_missing = launcher_core::platform::Target::current() == Some(launcher_core::platform::Target::MacosX64)
+                && !launcher_core::release::manifest_platforms(&json).iter().any(|p| p.starts_with("darwin-x86_64"));
         }
         let kinds = launcher_core::platform::Target::current().map(|t| t.kinds()).unwrap_or_default();
         // Every checksum file is read: an older release lists its installers in a second one.
@@ -183,7 +188,7 @@ impl System {
                 listed |= kinds.iter().filter_map(|&k| app.installer(k)).any(|file| launcher_core::checksums::lookup(&sums, &file).is_some());
             }
         }
-        let has_installer = !kinds.is_empty() && (listed || !any_list);
+        let has_installer = !kinds.is_empty() && (listed || !any_list) && !intel_missing;
         Ok(Some((release, has_installer)))
     }
 

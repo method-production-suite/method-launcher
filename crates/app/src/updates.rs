@@ -1,7 +1,7 @@
 //! The launcher's own updates (docs/spec.md §5.2): Help > Check for Updates, the automatic
 //! checks (2 minutes after launch, then every 6 hours, with the switch) and "Restart to
 //! Update", through the suite's updater (`method-update`, SUITE-STANDARDS.md §1), the way the
-//! apps update themselves. Apple silicon Macs only, as the updater is; elsewhere the launcher
+//! apps update themselves. Macs only (Apple silicon and Intel), as the updater is; elsewhere the launcher
 //! offers its new versions as a download.
 //!
 //! Releases are signed with the launcher's update key ([`PUBKEY`], key ID E115E2CD9AEE0DF9).
@@ -26,13 +26,14 @@ const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUxMT
 /// The bundle as the installer names it.
 pub const BUNDLE_NAME: &str = "Method Launcher.app";
 
-/// The updater has one target, `darwin-aarch64`: any other build never touches the network.
-const APPLE_SILICON: bool = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+/// The updater serves Macs (`darwin-aarch64` and, since method-libs#7, `darwin-x86_64`): any
+/// other build never touches the network.
+const MAC: bool = cfg!(all(target_os = "macos", any(target_arch = "aarch64", target_arch = "x86_64")));
 
 /// What the menu says when this build cannot update itself (a version that is not semver, say).
 pub const UPDATES_LATER: &str = "This build cannot update itself; download new versions from methodproduction.com";
-/// Anywhere but an Apple silicon Mac.
-pub const MAC_ONLY: &str = "Updates come through the launcher on Apple silicon Macs; elsewhere, download new versions from methodproduction.com";
+/// Anywhere but a Mac.
+pub const MAC_ONLY: &str = "Updates come through the launcher on Macs; elsewhere, download new versions from methodproduction.com";
 
 pub fn update_config() -> AppConfig {
     AppConfig::new(
@@ -48,7 +49,7 @@ pub fn update_config() -> AppConfig {
 
 /// Puts back a bundle an interrupted update left hidden, before the window opens.
 pub fn sweep_at_startup() {
-    if APPLE_SILICON && let Ok(exe) = std::env::current_exe() {
+    if MAC && let Ok(exe) = std::env::current_exe() {
         let swept = method_update::install::sweep_at_startup(&exe, &update_config().bundle);
         if swept.restored.is_some() || !swept.removed.is_empty() {
             eprintln!("update sweep: restored {:?}, removed {:?}", swept.restored, swept.removed);
@@ -75,7 +76,7 @@ impl Updates {
         let updater = Arc::new(updater);
         // The schedule: a look every TICK, a check when one is due. A build that cannot
         // update itself starts no timer at all.
-        if APPLE_SILICON && updater.unavailable().is_none() {
+        if MAC && updater.unavailable().is_none() {
             let (u, ctx) = (updater.clone(), ctx.clone());
             std::thread::spawn(move || {
                 loop {
@@ -92,7 +93,7 @@ impl Updates {
 
     /// Why Check for Updates cannot run here, for the menu's tooltip; `None` when it can.
     pub fn unavailable(&self) -> Option<&'static str> {
-        if !APPLE_SILICON {
+        if !MAC {
             Some(MAC_ONLY)
         } else if self.updater.unavailable().is_some() {
             Some(UPDATES_LATER)

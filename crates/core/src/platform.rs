@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     MacosArm64,
+    /// Intel Macs (owner's call, 2026-10-19: universal Mac builds from each app's next release).
+    MacosX64,
     WindowsX64,
     LinuxX86_64,
     LinuxArm64,
@@ -19,6 +21,8 @@ impl Target {
     pub const fn current() -> Option<Target> {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             Some(Target::MacosArm64)
+        } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            Some(Target::MacosX64)
         } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
             Some(Target::WindowsX64)
         } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
@@ -34,6 +38,7 @@ impl Target {
     pub const fn name(self) -> &'static str {
         match self {
             Target::MacosArm64 => "macos-arm64",
+            Target::MacosX64 => "macos-x64",
             Target::WindowsX64 => "windows-x64",
             Target::LinuxX86_64 => "linux-x86_64",
             Target::LinuxArm64 => "linux-arm64",
@@ -43,7 +48,7 @@ impl Target {
     /// The installer kinds the suite publishes for this system, the default first.
     pub const fn kinds(self) -> &'static [Kind] {
         match self {
-            Target::MacosArm64 => &[Kind::Dmg],
+            Target::MacosArm64 | Target::MacosX64 => &[Kind::Dmg],
             Target::WindowsX64 => &[Kind::SetupExe],
             Target::LinuxX86_64 => &[Kind::AppImage, Kind::Deb],
             Target::LinuxArm64 => &[],
@@ -53,7 +58,7 @@ impl Target {
     /// Whether an install here must find a checksum line first (docs/spec.md §4.1). On macOS
     /// the signature checks are what count; a checksum is an extra check when there is one.
     pub const fn needs_checksum(self) -> bool {
-        !matches!(self, Target::MacosArm64)
+        !matches!(self, Target::MacosArm64 | Target::MacosX64)
     }
 }
 
@@ -154,7 +159,8 @@ mod tests {
     fn arm_linux_has_nothing_to_install_and_only_macos_skips_checksums() {
         assert!(Target::LinuxArm64.kinds().is_empty());
         assert_eq!(Target::LinuxX86_64.kinds().first(), Some(&Kind::AppImage));
-        assert!(!Target::MacosArm64.needs_checksum());
+        assert!(!Target::MacosArm64.needs_checksum() && !Target::MacosX64.needs_checksum());
+        assert_eq!(Target::MacosX64.kinds(), &[Kind::Dmg]);
         assert!(Target::WindowsX64.needs_checksum() && Target::LinuxX86_64.needs_checksum());
     }
 }

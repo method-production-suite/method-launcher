@@ -38,6 +38,12 @@ pub fn manifest(json: &str) -> Option<Release> {
     Some(Release { version: version.to_string(), date, summary })
 }
 
+/// The platform keys of a release manifest (`darwin-aarch64`, `darwin-x86_64`, ...).
+pub fn manifest_platforms(json: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    value.get("platforms").and_then(|p| p.as_object()).map(|p| p.keys().cloned().collect()).unwrap_or_default()
+}
+
 /// `2026-10-19T04:18:39Z` as (2026, 10, 19).
 fn parse_date(text: &str) -> Option<(u32, u32, u32)> {
     let day = text.get(..10)?;
@@ -103,6 +109,13 @@ mod tests {
             manifest(r#"{"version":"0.13.0","pub_date":"bad","notes":"Method Reader 0.13.0. Release notes: https://example.org/x"}"#).unwrap();
         assert_eq!(reader.summary, None);
         assert_eq!(reader.date, None);
+    }
+
+    #[test]
+    fn reads_the_manifest_platforms() {
+        let json = r#"{"version":"0.5.0","platforms":{"darwin-aarch64":{},"darwin-x86_64":{}}}"#;
+        assert_eq!(manifest_platforms(json), ["darwin-aarch64", "darwin-x86_64"]);
+        assert!(manifest_platforms("{}").is_empty());
     }
 
     #[test]

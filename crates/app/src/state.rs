@@ -186,6 +186,13 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
         Found::Missing if !released(app, latest) => {
             Status { line: "No download yet".to_string(), badge: Some(Badge::InDevelopment), detail: None, busy: false }
         }
+        // An Intel Mac and a release with no Intel code (from before the app went universal).
+        Found::Missing if matches!(latest, Latest::NoInstaller(_)) && Target::current() == Some(Target::MacosX64) => Status {
+            line: format!("This version of {} needs an Apple silicon Mac", app.name),
+            badge: None,
+            detail: Some("Its next release runs on Intel Macs too.".to_string()),
+            busy: false,
+        },
         Found::Missing if !installable_here(latest) => Status {
             line: "Not built for this system yet".to_string(),
             badge: None,
@@ -220,6 +227,8 @@ pub fn primary(app: &App, found: &Found, latest: &Latest, job: &Job) -> Primary 
             _ => Primary::Open,
         },
         Found::Missing if !released(app, latest) => Primary::VisitSite,
+        // Nothing to install on an Intel Mac until the app's universal release: its site only.
+        Found::Missing if matches!(latest, Latest::NoInstaller(_)) && Target::current() == Some(Target::MacosX64) => Primary::VisitSite,
         Found::Missing if !installable_here(latest) => Primary::BuildFromSource,
         Found::Missing if installs_here() => Primary::Install { version, replacing: None },
         Found::Missing => Primary::DownloadPage,
@@ -335,7 +344,12 @@ mod tests {
     fn a_release_without_this_systems_installer_offers_no_install() {
         let schedule = by_slug("schedule").unwrap();
         let latest = Latest::NoInstaller(Release { version: "0.2.0".into(), date: None, summary: None });
-        assert_eq!(primary(schedule, &Found::Missing, &latest, &Job::Idle), Primary::BuildFromSource);
+        // On an Intel Mac that release needs Apple silicon: only the site is offered.
+        let expected = if Target::current() == Some(Target::MacosX64) { Primary::VisitSite } else { Primary::BuildFromSource };
+        assert_eq!(primary(schedule, &Found::Missing, &latest, &Job::Idle), expected);
+        if Target::current() == Some(Target::MacosX64) {
+            assert_eq!(status(schedule, &Found::Missing, &latest, &Job::Idle).line, "This version of Method Schedule needs an Apple silicon Mac");
+        }
         assert_eq!(primary(schedule, &installed("0.1.0", false), &latest, &Job::Idle), Primary::Open);
     }
 

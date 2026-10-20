@@ -97,7 +97,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 ## M2: Install
 
 - **[have] S** Release pinning, checksums and hashing (spec §4.1).
-- **[have] S** Mach-O reader: every executable is arm64 only.
+- **[have] S** Mach-O reader: every executable has this Mac's slice (apps), and the launcher's own build is exactly universal.
 - **[partial] M** Download with the redirect allow-list, limits and progress, through the
   system's `curl` (spec §4.1). Cancel is missing.
 - **[have] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
@@ -132,7 +132,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   Bug.
 - **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
   (scripts/make-icons.py). Missing: the wordmark.
-- **[partial] M** Its own updates (spec §5.2): `method-update` on Apple silicon Macs, with
+- **[partial] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and Intel), with
   the Help menu's switch and Restart to Update; on Windows and Linux, a link to the download.
   Have: all of it, and the release steps (updater archive, `latest.json`,
   `SHA256SUMS.minisig`). Waiting: the key's repository secrets (the owner's yes), then a
