@@ -18,13 +18,24 @@ pub(crate) fn fail(message: impl Into<String>, details: impl Into<String>) -> In
     InstallError::new(message, details)
 }
 
+/// The sentence for a failed request (spec §8). A missing file is the release having no
+/// download for this system.
 pub(crate) fn net_fail(app: &App, e: &NetError) -> InstallError {
+    let details = e.to_string();
     match e {
-        NetError::NotFound => fail(format!("{} has no download for this computer yet.", app.name), e.to_string()),
-        NetError::Redirected(_) => fail("The download came from somewhere unexpected, so it was stopped.", e.to_string()),
-        NetError::Stopped(_) => fail("The download stopped. Try again.", e.to_string()),
-        _ => fail("GitHub didn't answer. Check the connection and try again.", e.to_string()),
+        NetError::Offline(_) => fail("You're offline. Connect to the internet and try again.", details),
+        NetError::NotFound => fail(format!("This release of {} has no download for {}.", app.name, crate::system_name()), details),
+        NetError::Redirected(_) => fail("The download came from somewhere unexpected, so it was stopped.", details),
+        NetError::Stopped(_) => fail("The download stopped. Try again.", details),
+        NetError::NoSpace(_) => crate::no_space(app, None, details),
+        NetError::Local(_) => fail(format!("{} couldn't be downloaded.", app.name), details),
+        NetError::Unreachable(_) | NetError::Status(_) => fail("GitHub didn't answer. Try again in a few minutes.", details),
     }
+}
+
+/// The release's page, for a message that sends the person there.
+pub(crate) fn release_page(app: &App, tag: &str) -> String {
+    app.asset_url(tag, "").replace("/releases/download/", "/releases/tag/").trim_end_matches('/').to_string()
 }
 
 fn scratch(app: &App, name: &str) -> Result<PathBuf, InstallError> {
@@ -51,7 +62,10 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     let file = app.installer(kind).ok_or_else(|| fail(format!("{} has no download yet.", app.name), "no release"))?;
 
     stage(Stage::Finding);
-    let location = net::redirect_of(&app.latest_url(), &scratch(app, "redirect")?).map_err(|e| net_fail(app, &e))?;
+    let location = net::redirect_of(&app.latest_url(), &scratch(app, "redirect")?).map_err(|e| match e {
+        NetError::NotFound => fail(format!("{} has no release yet.", app.name), e.to_string()),
+        e => net_fail(app, &e),
+    })?;
     let tag = tag_from_location(&location).ok_or_else(|| fail("The latest release isn't what we expected.", location.clone()))?;
 
     let mut expected = None;
@@ -68,7 +82,8 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
         }
     }
     if require_checksum && expected.is_none() {
-        return Err(fail("This release can't be checked yet, so it can't be installed from here.", format!("{tag} lists no checksum for {file}")));
+        return Err(fail("This release can't be checked yet, so it can't be installed from here.", format!("{tag} lists no checksum for {file}"))
+            .with_link("Open the release page", release_page(app, &tag)));
     }
 
     let fetched = Fetched { file: scratch(app, &file)?, tag: tag.clone() };
@@ -107,5 +122,37 @@ pub(crate) fn hash_file(path: &Path) -> Result<String, String> {
             return Ok(hasher.hex());
         }
         hasher.update(buffer.get(..n).unwrap_or_default());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn budget() -> &'static App {
+        launcher_core::catalog::apps().iter().find(|a| a.slug == "budget").expect("budget")
+    }
+
+    #[test]
+    fn every_request_failure_has_spec_8_s_sentence() {
+        let says = |e: NetError| net_fail(budget(), &e).message;
+        assert_eq!(says(NetError::Offline("x".into())), "You're offline. Connect to the internet and try again.");
+        assert_eq!(says(NetError::Unreachable("x".into())), "GitHub didn't answer. Try again in a few minutes.");
+        assert_eq!(says(NetError::Status(502)), "GitHub didn't answer. Try again in a few minutes.");
+        assert_eq!(says(NetError::NotFound), format!("This release of Method Budget has no download for {}.", crate::system_name()));
+        assert_eq!(says(NetError::Redirected("https://example.com".into())), "The download came from somewhere unexpected, so it was stopped.");
+        assert_eq!(says(NetError::Stopped("slow".into())), "The download stopped. Try again.");
+        assert_eq!(says(NetError::NoSpace("full".into())), "There isn't enough free space to install Method Budget.");
+    }
+
+    #[test]
+    fn the_details_keep_the_technical_reason() {
+        let e = net_fail(budget(), &NetError::Status(503));
+        assert!(e.details.contains("503"), "{}", e.details);
+    }
+
+    #[test]
+    fn the_release_page_is_the_tag_s_page() {
+        assert_eq!(release_page(budget(), "v0.5.0"), "https://github.com/method-production-suite/method-budget/releases/tag/v0.5.0");
     }
 }

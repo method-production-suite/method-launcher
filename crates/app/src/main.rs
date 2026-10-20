@@ -160,12 +160,8 @@ impl Launcher {
             help: None,
             focused: true,
         };
-        #[cfg(target_os = "macos")]
-        {
-            // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
-            let dirs = vec![PathBuf::from("/Applications"), home().join("Applications")];
-            std::thread::spawn(move || launcher_sys::install_macos::clean_up(&dirs));
-        }
+        // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
+        std::thread::spawn(|| System.clean_up());
         launcher.rescan(ctx);
         // One switch for both: the updater's stored choice wins once it has one.
         launcher.settings.check_for_updates = launcher.updates.automatic();
@@ -571,6 +567,13 @@ impl Launcher {
                         self.act(ui.ctx(), index, app, &found, &main);
                     }
                     if let Job::Failed(error) = &job
+                        && let Some((label, url)) = &error.link
+                        && link(ui, label)
+                    {
+                        let url = url.clone();
+                        self.link(&url);
+                    }
+                    if let Job::Failed(error) = &job
                         && !error.details.is_empty()
                     {
                         let open = self.details.contains(&index);
@@ -765,11 +768,6 @@ fn set<T>(list: &mut [T], index: usize, value: T) {
     if let Some(slot) = list.get_mut(index) {
         *slot = value;
     }
-}
-
-#[cfg(target_os = "macos")]
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
 #[cfg(target_os = "macos")]

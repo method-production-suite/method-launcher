@@ -89,12 +89,50 @@ pub enum Stage {
 pub struct InstallError {
     pub message: String,
     pub details: String,
+    /// A page that helps, as (its label, its https address): the release, or how to fix it.
+    pub link: Option<(String, String)>,
 }
 
 impl InstallError {
     pub fn new(message: impl Into<String>, details: impl Into<String>) -> Self {
-        InstallError { message: message.into(), details: details.into() }
+        InstallError { message: message.into(), details: details.into(), link: None }
     }
+
+    pub fn with_link(mut self, label: impl Into<String>, url: impl Into<String>) -> Self {
+        self.link = Some((label.into(), url.into()));
+        self
+    }
+}
+
+/// This system's name, as the messages say it.
+pub fn system_name() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other => other,
+    }
+}
+
+/// The message for a disk that is full: how much the install needs, when that is known.
+pub fn no_space(app: &App, needed: Option<u64>, details: impl Into<String>) -> InstallError {
+    let message = match needed {
+        Some(bytes) => format!("There isn't enough free space to install {} (it needs {}).", app.name, megabytes(bytes)),
+        None => format!("There isn't enough free space to install {}.", app.name),
+    };
+    InstallError::new(message, details)
+}
+
+/// Bytes as the messages say them: "210 MB", rounded up.
+pub fn megabytes(bytes: u64) -> String {
+    format!("{} MB", bytes.div_ceil(1_000_000).max(1))
+}
+
+/// The free space where `dir` is, from the system's `df` (macOS and Linux), if it can be read.
+#[cfg(unix)]
+pub fn free_space(dir: &Path) -> Option<u64> {
+    let text = output("df", &["-Pk", "--", &dir.to_string_lossy()])?;
+    parse::df_available(&text)
 }
 
 impl std::fmt::Display for InstallError {
@@ -131,6 +169,23 @@ impl System {
         {
             install_linux::install(app, current, quit, icon_png, stage)
         }
+    }
+
+    /// Leftovers from an install the launcher was quit in the middle of (spec §4.5): partial
+    /// downloads, and each system's own staging copies and mounts. Only what is more than an
+    /// hour old, so a check or an install running now is never touched.
+    pub fn clean_up(&self) {
+        if let Some(cache) = self.cache() {
+            for entry in std::fs::read_dir(cache.join("downloads")).into_iter().flatten().flatten() {
+                if stale(&entry.path()) {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        install_macos::clean_up(&[PathBuf::from("/Applications"), env_path("HOME").unwrap_or_default().join("Applications")]);
+        #[cfg(target_os = "linux")]
+        install_linux::clean_up();
     }
 
     /// A fresh path in the launcher's cache for a scratch or downloaded file.
@@ -248,6 +303,15 @@ impl Folders for System {
     fn app_data(&self, app: &App) -> Vec<PathBuf> {
         os::data_roots().into_iter().map(|root| root.join(app.bundle_id)).collect()
     }
+}
+
+/// Older than an hour: a leftover, not something running now.
+fn stale(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > std::time::Duration::from_secs(3600))
 }
 
 /// An environment variable that is set and not empty.
