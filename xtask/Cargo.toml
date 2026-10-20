@@ -7,3 +7,17 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+# The updater archive, its signature and SHA256SUMS.minisig for a release (src/updater.rs): the
+# same minisign release the suite updater's tests sign with, and the archive crates the updater
+# unpacks with.
+minisign = "=0.10.0"
+base64 = "0.23"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+tar = { version = "0.4", default-features = false }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# The suite updater checks what updater.rs signs and packs, in its tests.
+method-update = { workspace = true }

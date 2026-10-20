@@ -335,15 +335,22 @@ macOS first; each app's own updater stays a second way.
 
 ### 5.2 The launcher itself
 
-- **From 0.1.0, on every system**: the launcher reads where its own `releases/latest`
-  redirects and, when that tag is newer than itself, says "Method Launcher X is available"
-  at the top of its window with **Download it**, which opens the release page in the
-  browser. No update key and no `latest.json` are needed for that.
-- **Later, on macOS**: `method-update`, pinned by full commit, with the launcher's own
-  minisign key (its public half in the app, the private key and its password as repository
-  secrets, in 1Password as "Method Launcher - Update signing key"), the standard schedule and
-  switch, Check for Updates..., and What's New once after an update. Windows and Linux move
-  to it when the suite's updater covers them.
+The owner's call (2026-10-19): "method launcher should have the same auto update
+functionality that the individual apps have".
+
+- **On Apple silicon Macs** the launcher updates itself through the suite's updater,
+  `method-update`, pinned by full commit (SUITE-STANDARDS.md §1, Method Budget's way): a
+  quiet check 2 minutes after launch and every 6 hours; when a newer release is out it
+  downloads it, checks its minisign signature against the launcher's own key (`PUBKEY`,
+  key ID E115E2CD9AEE0DF9), and shows "Update ready: Method Launcher X. Restart to update"
+  with **Restart to Update**, which swaps the bundle and starts the new one. An update
+  interrupted part-way is put right at the next launch.
+- **Help** holds Check for Updates…, the "Check for Updates Automatically" switch (on by
+  default; it covers both the launcher's own updates and the apps' checks), What's New,
+  Report a Bug and methodproduction.com.
+- **On Windows and Linux** the updater doesn't run yet: the launcher reads where its own
+  `releases/latest` redirects and, when that tag is newer, says "Method Launcher X is
+  available" with **Download it**. They move to the updater when it covers them.
 
 ## 6. Open and recent files
 

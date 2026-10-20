@@ -16,13 +16,36 @@ anything is signed, then makes a DRAFT release with:
 | `Method-Launcher-linux-amd64.deb` | Debian and Ubuntu |
 | `Method-Launcher-linux-x86_64.AppImage` | any x86_64 Linux |
 | `SHA256SUMS` | every file above |
+| `SHA256SUMS.minisig` | `SHA256SUMS`, signed with the update key |
+| `Method-Launcher_<version>_aarch64.app.tar.gz`, `.sig`, `latest.json` | the self-update for installed launchers on Apple silicon Macs |
 
 The names never change, so the website links `releases/latest/download/<file>`. A person
 checks the draft and publishes it.
 
-The launcher doesn't update itself yet (docs/spec.md §5.2): it reads where `releases/latest`
-redirects and shows "Method Launcher X is available" with a link to the download. So a
-release carries no update key and no `latest.json`.
+The launcher updates itself on Apple silicon Macs through the suite's updater,
+`method-update` (docs/spec.md §5.2), the way the apps do. On Windows and Linux it shows
+"Method Launcher X is available" with a link to the download, until the updater covers them.
+
+## The update key
+
+The launcher's own minisign key, key ID E115E2CD9AEE0DF9.
+
+- **Public half:** `PUBKEY` in `crates/app/src/updates.rs`, the one place it lives in the
+  repository. Installed launchers refuse any update not signed by it, so a new key means a
+  release with the new `PUBKEY` first.
+- **Private half and its password:** 1Password, "Method Launcher updater key", and the
+  repository secrets `TAURI_SIGNING_PRIVATE_KEY` (the base64 of the secret key box) and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the suite's secret names). Never in the repository,
+  an issue, a log or a chat.
+- **Made with:** `cargo xtask new-update-key --out-dir <folder outside the repository>`. It
+  writes the secret key box and a random password owner-only, and prints only the public
+  half.
+
+With the key and a notarised Mac build, a release also carries
+`Method-Launcher_<version>_aarch64.app.tar.gz`, its `.sig`, `latest.json` (checked against
+`PUBKEY` before it is written) and `SHA256SUMS.minisig` (the checksums, signed with the same
+key). Without the key the release is the same minus those files, and installed launchers
+don't see it.
 
 ## Before the tag
 

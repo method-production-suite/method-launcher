@@ -15,6 +15,11 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+# An update rehearsal: bakes a local endpoint, a throwaway key and plain HTTP from
+# METHOD_LAUNCHER_UPDATE_ENDPOINT, _PUBKEY and _INSECURE (build.rs refuses them otherwise).
+rehearsal = []
+
 [dependencies]
 launcher-core = { workspace = true }
 launcher-sys = { workspace = true }
@@ -22,6 +27,7 @@ eframe = { workspace = true }
 egui = { workspace = true }
 png = "0.18"
 serde_json = { workspace = true }
+method-update = { workspace = true }
 
 [dev-dependencies]
 # Draws the window to an image with no window, for the pictures test in src/screens.rs.

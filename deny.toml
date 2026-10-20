@@ -29,6 +29,10 @@ allow = [
     # The fonts egui bundles for its interface (epaint's default fonts).
     "OFL-1.1",
     "Ubuntu-font-1.0",
+    # webpki-roots, through method-update: the Mozilla root certificate list as data.
+    "CDLA-Permissive-2.0",
+    # File-level copyleft, used unmodified. Fine to ship alongside MIT/Apache code.
+    "MPL-2.0",
 ]
 confidence-threshold = 0.9
 
@@ -43,3 +47,5 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# method-libs comes in pinned to one reviewed revision (Cargo.toml): the suite's updater.
+allow-git = ["https://github.com/method-production-suite/method-libs"]

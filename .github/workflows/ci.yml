@@ -80,12 +80,12 @@ jobs:
           set -euo pipefail
           # A pull request checks only what it adds or bumps against main. Every push to main
           # and the weekly run check the whole lock (SUITE-STANDARDS.md §6).
-          # When method-libs comes in (pinned by full commit), add
-          # --allow-git https://github.com/method-production-suite/method-libs to both lines.
+          # method-libs (the suite's updater) is pinned to one reviewed revision (Cargo.toml).
+          allow=(--allow-git https://github.com/method-production-suite/method-libs)
           if [ "$EVENT" = pull_request ]; then
-            python3 scripts/check-crate-ages.py --only-changed origin/main
+            python3 scripts/check-crate-ages.py --only-changed origin/main "${allow[@]}"
           else
-            python3 scripts/check-crate-ages.py
+            python3 scripts/check-crate-ages.py "${allow[@]}"
           fi
   deny:
     # deny.toml: known advisories, licences compatible with MIT OR Apache-2.0, known sources.
