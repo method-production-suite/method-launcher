@@ -1,0 +1,72 @@
+<!-- title: Method Launcher -->
+<!-- description: The front door to the Method Production Suite: see every app, install the ones you want, keep them up to date and open them, from one small window. -->
+<!-- The launcher's page on the suite's site, served at /launcher/. MOrg syncs this file and
+     the launcher's site/img and site/assets into the website with each release. Pictures:
+     crates/app/src/screens.rs draws them. -->
+<article class="prose">
+  <p class="kicker">Method Launcher</p>
+  <h1 class="pitch">Every app, one download.</h1>
+
+  <p>The front door to the Method Production Suite. See every app, install the ones you
+    want, keep them up to date and open them, from one small window.</p>
+
+  <p class="get launcher-get"><a class="btn primary" href="https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-macOS.dmg">Download for Mac</a>
+    <a class="other" href="https://github.com/method-production-suite/method-launcher/releases/latest">Windows and Linux</a></p>
+
+  <picture>
+    <source srcset="img/apps-dark.png" media="(prefers-color-scheme: dark)">
+    <img src="img/apps-light.png" width="1280" height="800" alt="Method Launcher's window: Storyteller, Reader and Schedule installed and up to date, each with Open, and Budget ready to install, with the recent files below.">
+  </picture>
+
+  <h2>What it does</h2>
+  <ul>
+    <li><strong>Install with one click.</strong> Each app comes from its own latest release,
+      checked before anything is copied.</li>
+    <li><strong>Updates in one place.</strong> See which apps have a new version, then update one
+      or all of them. It asks before it quits an app you have open, and looks again every six
+      hours while it is open.</li>
+    <li><strong>Your recent files, across the suite.</strong> Scripts, schedules and budgets you
+      opened lately, each opening in the app it belongs to.</li>
+    <li><strong>Demo the suite.</strong> Opens your installed apps on Field Station, an invented
+      production, so you can see how they fit together before you use your own work.</li>
+  </ul>
+
+  <picture>
+    <source srcset="img/updates-dark.png" media="(prefers-color-scheme: dark)">
+    <img src="img/updates-light.png" width="1280" height="800" alt="Storyteller and Schedule each show a new version with Update to 0.3.0, and Update all (2) at the top of the window.">
+  </picture>
+
+  <h2>How it checks a download</h2>
+  <p>Nothing runs until it passes. On a Mac, every app must be signed by the suite's
+    Developer ID, notarised, and have code for your Mac's chip. On Windows and Linux, every
+    download must match the checksum its release publishes. If a check fails, nothing is
+    installed, and the card says why in one sentence. You can cancel while it downloads.</p>
+
+  <picture>
+    <source srcset="img/install-dark.png" media="(prefers-color-scheme: dark)">
+    <img src="img/install-light.png" width="1280" height="800" alt="Method Budget downloading, 84.2 MB so far, with Cancel beside it.">
+  </picture>
+
+  <h2>Platforms</h2>
+  <p>macOS (Intel and Apple silicon), Windows (x64) and Linux (x86_64 and ARM). On a Mac it
+    installs into Applications, or into your own Applications folder with no password, and
+    keeps itself up to date. On Linux it installs each app's AppImage, or its system package
+    where you have apt. Installing on Windows and Linux is built and tested automatically,
+    not yet tested by a person on those systems. The Windows installer is not signed yet,
+    so Windows may warn you before it opens. The suite's apps have no Linux ARM builds yet;
+    there the launcher shows them and links how to build them.</p>
+
+  <picture>
+    <source srcset="img/recent-dark.png" media="(prefers-color-scheme: dark)">
+    <img src="img/recent-light.png" width="1280" height="800" alt="The recent files: the Field Station budget, schedule, script and PDF, each with its app's mark, the day it was opened, and Show in Finder.">
+  </picture>
+
+  <h2>Private by default</h2>
+  <p>No account, no server of its own and no tracking. It reads the suite's list of apps from
+    this site and each app's releases from GitHub, and you can turn update checks off. It
+    never changes your files.</p>
+
+  <h2>Free and open source</h2>
+  <p>MIT or Apache-2.0, like every Method app.
+    <a href="https://github.com/method-production-suite/method-launcher">The code is on GitHub</a>.</p>
+</article>

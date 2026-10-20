@@ -1,3 +1,8 @@
+<picture>
+  <source srcset="assets/brand/launcher-wordmark-dark.svg" media="(prefers-color-scheme: dark)">
+  <img src="assets/brand/launcher-wordmark.svg" alt="Method Launcher" height="40">
+</picture>
+
 # Method Launcher
 
 One small app for macOS, Windows and Linux that is the front door to the Method Production
@@ -15,11 +20,22 @@ whichever system you use.
   each opening in the app it belongs to.
 - **Field Station, ready to open.** Every app's invented sample production, one click away.
 
+<picture>
+  <source srcset="assets/screens/apps-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="assets/screens/apps-light.png" width="640" alt="Method Launcher's window: Storyteller, Reader and Schedule installed and up to date, each with Open, and Budget ready to install, with the recent files below.">
+</picture>
+
+<picture>
+  <source srcset="assets/screens/updates-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="assets/screens/updates-light.png" width="640" alt="Storyteller and Schedule each show a new version with Update to 0.3.0, and Update all (2) at the top of the window.">
+</picture>
+
 ## Yours to keep
 
 - Free, and open source under MIT OR Apache-2.0.
-- No account, no server of its own, no tracking. It reaches only GitHub, to check for and
-  download releases, and you can turn update checks off.
+- No account, no server of its own, no tracking. It reads the suite's list of apps from
+  methodproduction.com and each app's releases from GitHub, and you can turn update checks
+  off.
 - It never touches your files: it reads the apps' own recent-file lists and hands a file to
   its app.
 
