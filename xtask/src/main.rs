@@ -4,6 +4,7 @@
 //! `package.rs` and docs/RELEASING.md).
 
 mod package;
+mod updater;
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -29,7 +30,11 @@ fn main() -> ExitCode {
         "dmg-macos" => package::parse_options(rest).and_then(|o| package::dmg_macos(&o)),
         "package-linux" => package::parse_options(rest).and_then(|o| package::package_linux(&o)),
         "package-windows" => package::parse_options(rest).and_then(|o| package::package_windows(&o)),
-        _ => Err("usage: cargo xtask <ci|layers|version|bundle-macos|dmg-macos|package-linux|package-windows>".to_string()),
+        "updater-archive" => updater::archive_command(root(), rest),
+        "update-manifest" => updater::manifest_command(root(), rest),
+        "sign-file" => updater::sign_file_command(root(), rest),
+        "new-update-key" => updater::new_key_command(root(), rest),
+        _ => Err("usage: cargo xtask <ci|layers|version|bundle-macos|dmg-macos|package-linux|package-windows|updater-archive|update-manifest|sign-file|new-update-key>".to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

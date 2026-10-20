@@ -24,9 +24,15 @@
 #                      WINDOWS_CERTIFICATE_PASSWORD. The suite's model step (Method
 #                      Schedule's), for the app and the installer; no certificate exists
 #                      yet, so it stays off.
-#   Updates:           none in 0.1.0. The launcher doesn't update itself yet: it shows its own
-#                      new versions as a download link (docs/spec.md §5.2), so no update key
-#                      and no latest.json. Self-update through method-update comes later.
+#   Updates (macOS):   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the suite's
+#                      names; the launcher's own minisign key, "Method Launcher updater key" in
+#                      1Password, key ID E115E2CD9AEE0DF9; its public half is PUBKEY in
+#                      crates/app/src/updates.rs). With the key and a notarized build, the
+#                      release also carries the updater archive
+#                      Method-Launcher_<version>_aarch64.app.tar.gz, its .sig and latest.json,
+#                      which installed launchers read, and SHA256SUMS.minisig (`cargo xtask
+#                      updater-archive`, `update-manifest`, `sign-file`; xtask/src/updater.rs).
+#                      Without the key the release is the same, minus those files.
 #
 # The rehearsal (Method Reader's way): dispatched on main with rehearse_version set to the
 # workspace version, it runs every check, build, signature, notarization and staple and
@@ -135,11 +141,13 @@ jobs:
           REHEARSE: ${{ inputs.rehearse_version }}
         run: |
           set -euo pipefail
+          # method-libs (the suite's updater) is pinned to one reviewed revision (Cargo.toml).
+          allow=(--allow-git https://github.com/method-production-suite/method-libs)
           if [ -n "$REHEARSE" ]; then
             echo "::notice::Rehearsal: the crate-age check honours the age-out entries, as main does. A real release does not."
-            python3 scripts/check-crate-ages.py
+            python3 scripts/check-crate-ages.py "${allow[@]}"
           else
-            python3 scripts/check-crate-ages.py --release
+            python3 scripts/check-crate-ages.py --release "${allow[@]}"
           fi
 
   build:
@@ -165,6 +173,7 @@ jobs:
       HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 != '' && secrets.CERT_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' }}
       HAS_NOTARY_KEY: ${{ secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' && secrets.AC_API_KEY_P8_BASE64 != '' }}
       HAS_WIN_SIGNING: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
       # appimagetool 1.9.1 and the type 2 runtime 20251108 (AppImage project releases).
       APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
       APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
@@ -329,6 +338,21 @@ jobs:
             spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
           fi
 
+      # Only a notarized build is offered to installed launchers: they would refuse anything
+      # else, and an update must open without a warning.
+      - name: The updater archive and its signature (macOS)
+        if: runner.os == 'macOS' && env.MACOS_NOTARIZE == 'yes' && env.HAS_UPDATER_KEY == 'true'
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The xtask binary built before any secret, run directly: never cargo beside a key.
+          test -x target/debug/xtask
+          target/debug/xtask updater-archive --app "target/bundle/macos/Method Launcher.app" --version "${TAG#v}" --out-dir target/bundle/updater
+          ls -l target/bundle/updater
+
       - name: Forget the signing material (macOS)
         if: always() && runner.os == 'macOS'
         run: |
@@ -396,6 +420,7 @@ jobs:
           case "$RUNNER_OS" in
             macOS)
               cp target/bundle/macos/Method-Launcher-macOS.dmg dist/
+              if [ -d target/bundle/updater ]; then cp target/bundle/updater/* dist/; fi
               echo "${MACOS_NOTARIZE:-no}" > meta/macos-notarized
               ;;
             Windows) cp target/bundle/windows/Method-Launcher-windows-x64-setup.exe dist/ ;;
@@ -428,7 +453,9 @@ jobs:
     # installers. Publishing the draft is left to a person.
     needs: [check, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     permissions:
       contents: write # create the draft release and upload its files
     steps:
@@ -446,16 +473,30 @@ jobs:
           pattern: meta-*
           path: meta
           merge-multiple: true
+      # Built before any secret reaches this job; the key step below runs it directly.
+      - name: Build the release tool
+        run: cargo build --locked --package xtask
       - name: Every installer is here, under its version-free name
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
         run: |
           set -euo pipefail
           for f in Method-Launcher-macOS.dmg Method-Launcher-windows-x64-setup.exe \
                    Method-Launcher-linux-amd64.deb Method-Launcher-linux-x86_64.AppImage; do
             if [ ! -s "dist/$f" ]; then echo "::error::dist/$f is missing."; exit 1; fi
           done
-          # One SHA256SUMS, under exactly that name, listing every file the release offers
-          # (SUITE-STANDARDS.md §3: the launcher and people verify downloads with it). Written
-          # last, so it covers everything else.
+          # The update manifest, when the Mac build brought the signed updater archive. It is
+          # checked against the app's own public key before it is written.
+          version="${TAG#v}"
+          archive="Method-Launcher_${version}_aarch64.app.tar.gz"
+          if [ -s "dist/$archive" ] && [ -s "dist/$archive.sig" ]; then
+            target/debug/xtask update-manifest --dir dist --version "$version" --out dist/latest.json
+          else
+            echo "::notice::No updater archive in this release (no update key, or not notarized): no latest.json, so installed launchers won't see it (docs/RELEASING.md)."
+          fi
+          # One SHA256SUMS, under exactly that name, listing every file the release offers,
+          # latest.json and the updater archive included (SUITE-STANDARDS.md §3: the launcher
+          # and people verify downloads with it). Written last, so it covers everything else.
           rm -f dist/SHA256SUMS
           (cd dist && sha256sum -- * | tee "$RUNNER_TEMP/SHA256SUMS")
           mv "$RUNNER_TEMP/SHA256SUMS" dist/
@@ -466,6 +507,18 @@ jobs:
             echo "::error::SHA256SUMS lists $listed files, but the release has $files."
             exit 1
           fi
+      # SHA256SUMS.minisig: the checksums signed with the launcher's update key
+      # (SUITE-STANDARDS.md §3), checked against the app's public key first.
+      - name: Sign SHA256SUMS
+        if: env.HAS_UPDATER_KEY == 'true'
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -x target/debug/xtask
+          target/debug/xtask sign-file --file dist/SHA256SUMS
+          ls -l dist/SHA256SUMS.minisig
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}

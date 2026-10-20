@@ -18,6 +18,9 @@ serde_json = "1"
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "accesskit"] }
 egui = "0.36"
 sha2 = "0.11"
+# method-libs: the suite's updater, pinned to one reviewed revision (the one Method Storyteller
+# ships), so the launcher updates itself the way the apps do (SUITE-STANDARDS.md §1).
+method-update = { git = "https://github.com/method-production-suite/method-libs", rev = "37a9c8b9801bfcdedb9d79565a62f84fcdfb9a4a" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

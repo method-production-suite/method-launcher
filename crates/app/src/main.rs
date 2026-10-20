@@ -6,6 +6,7 @@
 mod images;
 mod state;
 mod theme;
+mod updates;
 
 #[cfg(test)]
 mod screens;
@@ -48,6 +49,8 @@ fn main() -> eframe::Result<()> {
             viewport.with_icon(Arc::new(egui::IconData { width: icon.width() as u32, height: icon.height() as u32, rgba: icon.as_raw().to_vec() }));
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
+    // Puts back a launcher bundle an interrupted self-update left hidden.
+    updates::sweep_at_startup();
     eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(Launcher::new(&cc.egui_ctx)))))
 }
 
@@ -98,6 +101,8 @@ struct Launcher {
     /// The suite's recent files, newest first, each with its app's index.
     recent: Vec<(usize, Recent)>,
     settings: Settings,
+    /// The launcher's own updates, through the suite's updater (spec §5.2).
+    updates: updates::Updates,
     send: mpsc::Sender<Event>,
     receive: mpsc::Receiver<Event>,
     /// Each app's mark, and its own icon once found installed, ready to draw.
@@ -137,6 +142,10 @@ impl Launcher {
             checked: None,
             launcher_newer: None,
             recent: Vec::new(),
+            updates: {
+                let settings = Settings::load();
+                updates::Updates::start(ctx, System.data().map(|d| d.join("updates.json")), settings.check_for_updates)
+            },
             settings: Settings::load(),
             send,
             receive,
@@ -154,6 +163,8 @@ impl Launcher {
             std::thread::spawn(move || launcher_sys::install_macos::clean_up(&dirs));
         }
         launcher.rescan(ctx);
+        // One switch for both: the updater's stored choice wins once it has one.
+        launcher.settings.check_for_updates = launcher.updates.automatic();
         if launcher.settings.check_for_updates {
             launcher.check_latest(ctx);
         }
@@ -655,6 +666,52 @@ impl Launcher {
             });
     }
 
+    /// Help (SUITE-STANDARDS.md §1, §4): Check for Updates…, the "Check for Updates
+    /// Automatically" switch (on by default; it covers the launcher's own updates and the
+    /// apps' checks), What's New, Report a Bug and the suite's site.
+    fn help_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        egui::containers::menu::MenuButton::new(egui::RichText::new("Help").size(15.0)).ui(ui, |ui| {
+            ui.set_min_width(260.0);
+            let unavailable = self.updates.unavailable();
+            let check = ui.add_enabled(unavailable.is_none() || cfg!(not(target_os = "macos")), egui::Button::new("Check for Updates…"));
+            if check.clicked() {
+                if unavailable.is_none() {
+                    self.updates.check(ctx);
+                    self.notice = Some(("Checking for updates…".to_string(), false));
+                }
+                self.rescan(ctx);
+                self.check_latest(ctx);
+                ui.close();
+            }
+            let mut on = self.settings.check_for_updates;
+            if ui.checkbox(&mut on, "Check for Updates Automatically").changed() {
+                self.settings.check_for_updates = on;
+                let saved = self.settings.save().and_then(|()| self.updates.set_automatic(on).map_err(|e| e.to_string()));
+                if let Err(e) = saved {
+                    self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
+                }
+                if on && self.checked.is_none() {
+                    self.check_latest(ctx);
+                }
+            }
+            ui.separator();
+            if ui.button("What's New in Method Launcher").clicked() {
+                self.link(&format!("https://github.com/method-production-suite/method-launcher/releases/tag/v{}", env!("CARGO_PKG_VERSION")));
+                ui.close();
+            }
+            if ui.button("Report a Bug").clicked() {
+                self.link("https://github.com/method-production-suite/method-launcher/issues/new");
+                ui.close();
+            }
+            if ui.button("methodproduction.com").clicked() {
+                self.link("https://methodproduction.com");
+                ui.close();
+            }
+            ui.separator();
+            ui.label(egui::RichText::new(format!("Method Launcher {}", env!("CARGO_PKG_VERSION"))).size(12.5).color(ui.visuals().weak_text_color()));
+        });
+    }
+
     fn act(&mut self, ctx: &egui::Context, index: usize, app: &App, found: &Found, main: &Primary) {
         match main {
             Primary::Open => {
@@ -747,6 +804,7 @@ impl eframe::App for Launcher {
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
+                    self.help_menu(ui, &ctx);
                     let updatable = self.updatable();
                     if installs_here() && !updatable.is_empty() {
                         let label = format!("Update all ({})", updatable.len());
@@ -773,7 +831,34 @@ impl eframe::App for Launcher {
                     ui.label(egui::RichText::new(checked).size(13.0).color(muted));
                 });
             });
-            if let Some(version) = self.launcher_newer.clone() {
+            // The launcher's own update (spec §5.2): "Update ready, restart to update" on a Mac;
+            // elsewhere, its new version as a download.
+            let status = self.updates.status();
+            if let Some(line) = updates::status_line(&status) {
+                if status.said.is_some() {
+                    // A one-time answer to Check for Updates: kept as the notice.
+                    self.notice = Some((
+                        line,
+                        status.phase == "failed" || matches!(status.said, Some(method_update::Said::Failed | method_update::Said::InstallFailed)),
+                    ));
+                } else {
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 14.0;
+                        ui.label(egui::RichText::new(&line).size(14.0));
+                        if status.phase == "ready" && ui.add(accent_button(ui, "Restart to Update", LAUNCHER_ACCENT)).clicked() {
+                            match self.updates.install_and_relaunch() {
+                                Ok(()) => std::process::exit(0),
+                                Err(e) => {
+                                    self.notice =
+                                        Some((format!("The update didn't install ({e}). It is still ready: Restart to Update tries again."), true))
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            if let Some(version) = self.launcher_newer.clone().filter(|_| self.updates.unavailable().is_some()) {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
@@ -804,7 +889,7 @@ impl eframe::App for Launcher {
                 }
                 ui.add_space(32.0);
                 self.recent_files(ui);
-                // Footer: where downloads come from, the update-check switch, and the suite's site.
+                // Footer: where downloads come from, and the suite's site.
                 ui.add_space(24.0);
                 ui.separator();
                 ui.add_space(10.0);
@@ -820,17 +905,6 @@ impl eframe::App for Launcher {
                         }
                     });
                 });
-                ui.add_space(8.0);
-                let mut on = self.settings.check_for_updates;
-                if ui.checkbox(&mut on, egui::RichText::new("Check for updates automatically").size(13.0).color(muted)).changed() {
-                    self.settings.check_for_updates = on;
-                    if let Err(e) = self.settings.save() {
-                        self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
-                    }
-                    if on && self.checked.is_none() {
-                        self.check_latest(&ctx);
-                    }
-                }
             });
         });
     }

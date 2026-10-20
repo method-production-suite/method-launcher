@@ -132,8 +132,11 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   Bug.
 - **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
   (scripts/make-icons.py). Missing: the wordmark.
-- **[missing] M** Its own updates: `method-update` on macOS, with a key in 1Password; on
-  Windows and Linux, "Version X is ready" with a link to the download (spec §5.2).
+- **[partial] M** Its own updates (spec §5.2): `method-update` on Apple silicon Macs, with
+  the Help menu's switch and Restart to Update; on Windows and Linux, a link to the download.
+  Have: all of it, and the release steps (updater archive, `latest.json`,
+  `SHA256SUMS.minisig`). Waiting: the key's repository secrets (the owner's yes), then a
+  first release to update from.
 
 ## M5: Release
 
