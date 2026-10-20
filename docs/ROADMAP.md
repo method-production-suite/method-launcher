@@ -16,7 +16,15 @@ says otherwise.
 
 ### Decisions
 
-None open. Decided by the owner, 2026-10-18:
+Built on recommendation (reversible; say if you want it otherwise):
+
+- **The launcher's page stays on the suite's site** at methodproduction.com/launcher/, not
+  a domain of its own: the launcher is the suite's front door. Its `site/` holds that page's
+  fragment and pictures, and MOrg syncs them with each release.
+
+Otherwise none open.
+
+Decided by the owner, 2026-10-18:
 
 1. **Name: Method Launcher.** Repo `method-launcher`, CLI `method-launcher`, window binary
    `method-launcher-app`, bundle id `com.methodlauncher.desktop`, downloads
@@ -149,8 +157,9 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 - **[have] S** Help menu (SUITE-STANDARDS.md §4): About, User Guide (docs/user-guide.md),
   Keyboard Shortcuts, What's New, Check for Updates…, Report a Bug prefilled with the version
   and system, Licenses and Notices, methodproduction.com.
-- **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
-  (scripts/make-icons.py). Missing: the wordmark.
+- **[have] S** The mark, wordmark and app icon: the suite's four pages, as the app icon
+  (scripts/make-icons.py), and "method launcher" in the family's strokes
+  (scripts/make-brand.py, from the website's glyphs).
 - **[partial] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and Intel), with
   the Help menu's switch and Restart to Update; on Windows and Linux, a link to the download.
   Have: all of it, and the release steps (updater archive, `latest.json`,
@@ -170,5 +179,9 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   an advisory passes when marked with its RUSTSEC id (SUITE-STANDARDS.md §6; the
   method-storyteller release workflow is the model, or the shared method-libs script once it
   lands).
-- **[missing] S** Pictures: the four shots from an offscreen render (SUITE-STANDARDS.md §7).
-- **[missing] S** `site/` for the website, and MOrg adds the launcher to the catalog.
+- **[have] S** Pictures: the four shots, light and dark at 1280 by 800, from an invented
+  state, drawn offscreen (crates/app/src/screens.rs, SUITE-STANDARDS.md §7), into
+  `assets/screens/` and `site/img/`.
+- **[have] S** `site/`: the launcher's page on the suite's site (`site/launcher.html`, the
+  hub's fragment for `/launcher/`), its pictures, mark, wordmark and favicon, for MOrg to
+  sync. Built on recommendation (see Waiting on the owner).
