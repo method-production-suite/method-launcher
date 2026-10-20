@@ -16,11 +16,43 @@ pub fn use_deb(chosen: bool, apt: bool, current: Option<&Path>, appimage: Option
     }
 }
 
-/// What `pkexec apt-get install` exiting with `code` means (spec §8): 126 and 127 are pkexec's
-/// own, for a password prompt dismissed or refused.
+/// The privileged step, run by `pkexec /bin/sh -c INSTALL sh <download> <sha256>`. Everything
+/// root installs is checked by root: the download is copied into a fresh root-owned folder
+/// (mktemp makes it 0700), that copy is checked against the release's SHA-256, and apt
+/// installs that copy. So a process of the person's own can't swap the file between the
+/// launcher's check and the install. The paths and the hash arrive as arguments, never in the
+/// script's text. Its own exit codes: 3, the copy doesn't match; 4, it couldn't be copied.
+pub const INSTALL: &str = r#"set -eu
+dir=$(/bin/mktemp -d /tmp/method-launcher-deb.XXXXXXXX)
+trap '/bin/rm -rf "$dir"' EXIT
+/bin/cp -- "$1" "$dir/package.deb" || exit 4
+printf '%s  %s
+' "$2" "$dir/package.deb" | /usr/bin/sha256sum --check --strict --quiet - || exit 3
+/usr/bin/apt-get install -y -- "$dir/package.deb"
+"#;
+
+/// The arguments for `pkexec` that run [`INSTALL`] on `download`, which must match `sha256`.
+/// `None` when the hash isn't one (64 hex digits), so nothing unchecked ever reaches root.
+pub fn pkexec_args(download: &Path, sha256: &str) -> Option<Vec<std::ffi::OsString>> {
+    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(vec!["/bin/sh".into(), "-c".into(), INSTALL.into(), "sh".into(), download.as_os_str().to_owned(), sha256.to_ascii_lowercase().into()])
+}
+
+/// What the privileged step exiting with `code` means (spec §8): 126 and 127 are pkexec's own,
+/// for a password prompt dismissed or refused; 3 and 4 are [`INSTALL`]'s.
 pub fn result(app: &App, code: Option<i32>, stderr: &str) -> Result<(), InstallError> {
     match code {
         Some(0) => Ok(()),
+        Some(3) => Err(InstallError::new(
+            "The download doesn't match the release's checksum, so it was deleted. Try again.",
+            "the copy the administrator step made didn't match the release's SHA-256",
+        )),
+        Some(4) => Err(InstallError::new(
+            format!("{}'s system package couldn't be installed. Nothing was changed.", app.name),
+            format!("the download couldn't be copied for installing: {}", stderr.trim()),
+        )),
         Some(126 | 127) => Err(InstallError::new("Not installed. You can install the AppImage instead.", "the administrator prompt was cancelled")
             .with_link(
                 "How to choose the AppImage",
@@ -56,6 +88,45 @@ mod tests {
         assert!(!use_deb(true, true, Some(appimage), Some(appimage)), "the AppImage stays an AppImage");
         assert!(use_deb(false, true, Some(package), Some(appimage)), "the package stays a package");
         assert!(!use_deb(true, false, Some(package), Some(appimage)));
+    }
+
+    #[test]
+    fn root_checks_its_own_copy_before_apt_installs_it() {
+        let sha = "a".repeat(64);
+        let args = pkexec_args(Path::new("/home/you/.cache/x/budget.deb"), &sha).unwrap();
+        assert_eq!(args[0], "/bin/sh");
+        assert_eq!(args[1], "-c");
+        assert_eq!(args[2], INSTALL);
+        assert_eq!(args[4], "/home/you/.cache/x/budget.deb");
+        assert_eq!(args[5], sha.as_str());
+        // In this order: copy into root's folder, check that copy, install that copy.
+        let copy = INSTALL.find("/bin/cp").unwrap();
+        let check = INSTALL.find("sha256sum --check").unwrap();
+        let install = INSTALL.find("apt-get install").unwrap();
+        assert!(copy < check && check < install);
+        assert!(INSTALL.contains(r#"apt-get install -y -- "$dir/package.deb""#), "apt installs the checked copy");
+        assert!(!INSTALL.contains(r#"apt-get install -y -- "$1""#), "never the person's own file");
+        // Nothing reaches root without a real hash.
+        assert!(pkexec_args(Path::new("/x.deb"), "abc").is_none());
+        assert!(pkexec_args(Path::new("/x.deb"), &format!("{}; rm -rf /", "a".repeat(52))).is_none());
+    }
+
+    /// The script itself, run unprivileged where `sh`, `mktemp`, `cp` and `sha256sum` are, with
+    /// apt swapped for `true`: a matching copy passes, a swapped one stops with 3.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_script_refuses_a_swapped_file() {
+        let dir = std::env::temp_dir().join(format!("launcher-deb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("budget.deb");
+        std::fs::write(&file, b"package").unwrap();
+        let good = crate::fetch::hash_file(&file).unwrap();
+        let script = INSTALL.replace("/usr/bin/apt-get install -y --", "true");
+        let run = |sha: &str| std::process::Command::new("/bin/sh").args(["-c", &script, "sh"]).arg(&file).arg(sha).status().unwrap().code();
+        assert_eq!(run(&good), Some(0));
+        std::fs::write(&file, b"swapped").unwrap();
+        assert_eq!(run(&good), Some(3));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

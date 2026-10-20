@@ -90,6 +90,9 @@ fn scratch(app: &App, name: &str) -> Result<PathBuf, InstallError> {
 pub struct Fetched {
     pub file: PathBuf,
     pub tag: String,
+    /// The SHA-256 the release lists for it, when it lists one: a step that runs with more
+    /// rights than the launcher checks its own copy against this again.
+    pub sha256: Option<String>,
 }
 
 impl Drop for Fetched {
@@ -131,7 +134,7 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
             .with_link("Open the release page", release_page(app, &tag)));
     }
 
-    let fetched = Fetched { file: scratch(app, &file)?, tag: tag.clone() };
+    let fetched = Fetched { file: scratch(app, &file)?, tag: tag.clone(), sha256: expected.clone() };
     let url = app.asset_url(&tag, &file);
     let downloaded = {
         let target = fetched.file.clone();
