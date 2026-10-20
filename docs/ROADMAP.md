@@ -117,8 +117,8 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 - **[have] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
   notarisation, arm64, links) and copy with staging and rename (spec §4.2); updates over
   the installed copy, and replacing an earlier-named copy.
-- **[partial] S** macOS: administrator prompt (built, not yet tried) and the
-  `~/Applications` choice (missing).
+- **[partial] S** macOS: administrator prompt (built, not yet tried: waiting on the owner's
+  screen) and the `~/Applications` choice in the new Settings window (have).
 - **[partial] S** Windows: the setup checked against `SHA256SUMS`, run per user with its own
   window, then confirmed by looking again (spec §4.3). Built and cross-checked, not yet run
   on a Windows machine. Missing: Authenticode, once the suite signs Windows builds.

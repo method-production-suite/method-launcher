@@ -117,6 +117,8 @@ struct Launcher {
     notice: Option<(String, bool)>,
     /// The Help window that is open, if any.
     help: Option<help::Window>,
+    /// Whether the Settings window is open.
+    settings_open: bool,
     focused: bool,
 }
 
@@ -158,6 +160,7 @@ impl Launcher {
             details: HashSet::new(),
             notice: None,
             help: None,
+            settings_open: false,
             focused: true,
         };
         // Leftovers from an install the launcher was quit in the middle of (spec §4.5).
@@ -428,13 +431,14 @@ impl Launcher {
             _ => None,
         };
         set(&mut self.jobs, index, Job::Running(Stage::Finding));
+        let choices = self.settings.choices();
         let (send, ctx) = (self.send.clone(), ctx.clone());
         std::thread::spawn(move || {
             let report = |stage: Stage| {
                 let _ = send.send(Event::Stage(index, stage));
                 ctx.request_repaint();
             };
-            let result = System.install(app, current.as_ref(), quit, mark_png(app), &report);
+            let result = System.install(app, current.as_ref(), quit, mark_png(app), choices, &report);
             let _ = send.send(Event::Done(index, result));
             ctx.request_repaint();
         });
@@ -728,14 +732,7 @@ impl Launcher {
             }
             let mut on = self.settings.check_for_updates;
             if ui.checkbox(&mut on, "Check for Updates Automatically").changed() {
-                self.settings.check_for_updates = on;
-                let saved = self.settings.save().and_then(|()| self.updates.set_automatic(on).map_err(|e| e.to_string()));
-                if let Err(e) = saved {
-                    self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
-                }
-                if on && self.checked.is_none() {
-                    self.check_latest(ctx);
-                }
+                self.set_check_for_updates(ctx, on);
             }
             ui.separator();
             if ui.button("Report a Bug").clicked() {
@@ -753,6 +750,73 @@ impl Launcher {
             ui.separator();
             ui.label(egui::RichText::new(format!("Method Launcher {}", env!("CARGO_PKG_VERSION"))).size(12.5).color(ui.visuals().weak_text_color()));
         });
+    }
+
+    /// The one switch for the launcher's own updates and the apps' checks (SUITE-STANDARDS.md
+    /// §1), from Help or Settings.
+    fn set_check_for_updates(&mut self, ctx: &egui::Context, on: bool) {
+        self.settings.check_for_updates = on;
+        let saved = self.settings.save().and_then(|()| self.updates.set_automatic(on).map_err(|e| e.to_string()));
+        if let Err(e) = saved {
+            self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
+        }
+        if on && self.checked.is_none() {
+            self.check_latest(ctx);
+        }
+    }
+
+    fn save_settings(&mut self) {
+        if let Err(e) = self.settings.save() {
+            self.notice = Some((format!("The setting couldn't be saved. {e}"), true));
+        }
+    }
+
+    /// Settings (spec §3.4): the update switch, and where and how new installs go.
+    fn settings_window(&mut self, ctx: &egui::Context) {
+        let mut open = true;
+        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Window::new("Settings")
+            .id(egui::Id::new("launcher.settings"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_width(420.0);
+                let mut on = self.settings.check_for_updates;
+                if ui.checkbox(&mut on, "Check for updates automatically").changed() {
+                    self.set_check_for_updates(ctx, on);
+                }
+                let muted = ui.visuals().weak_text_color();
+                ui.label(egui::RichText::new("For the launcher and every app. Refresh always checks.").size(12.5).color(muted));
+                if cfg!(target_os = "macos") {
+                    ui.add_space(12.0);
+                    ui.strong("Install apps in");
+                    let mut home = self.settings.home_applications;
+                    let changed = ui.radio_value(&mut home, false, "Applications").changed()
+                        | ui.radio_value(&mut home, true, "My Applications folder (no administrator password)").changed();
+                    if changed {
+                        self.settings.home_applications = home;
+                        self.save_settings();
+                    }
+                    ui.label(egui::RichText::new("For new installs. An update goes where the app already is.").size(12.5).color(muted));
+                }
+                if launcher_sys::apt_available() {
+                    ui.add_space(12.0);
+                    ui.strong("Install apps as");
+                    let mut deb = self.settings.deb;
+                    let changed = ui.radio_value(&mut deb, false, "AppImage in my Applications folder").changed()
+                        | ui.radio_value(&mut deb, true, "System package (.deb, asks for your password)").changed();
+                    if changed {
+                        self.settings.deb = deb;
+                        self.save_settings();
+                    }
+                }
+                ui.add_space(10.0);
+                if ui.button("Close").clicked() {
+                    open = false;
+                }
+            });
+        self.settings_open = open && !escape;
     }
 
     fn act(&mut self, ctx: &egui::Context, index: usize, app: &App, found: &Found, main: &Primary) {
@@ -830,6 +894,12 @@ impl eframe::App for Launcher {
         if let Some(window) = self.help {
             self.help = help::show(&ctx, window);
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma))) {
+            self.settings_open = true;
+        }
+        if self.settings_open {
+            self.settings_window(&ctx);
+        }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(PAD)).show(ui, |ui| {
             let muted = ui.visuals().weak_text_color();
             // Header: the suite's wordmark and the promise on the left, the launcher's own
@@ -850,6 +920,10 @@ impl eframe::App for Launcher {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     self.help_menu(ui, &ctx);
+                    let settings = egui::Button::new(egui::RichText::new("Settings").size(15.0)).corner_radius(8.0);
+                    if ui.add(settings).clicked() {
+                        self.settings_open = true;
+                    }
                     let updatable = self.updatable();
                     if installs_here() && !updatable.is_empty() {
                         let label = format!("Update all ({})", updatable.len());
@@ -1094,6 +1168,11 @@ fn day(at: std::time::SystemTime) -> String {
 struct Settings {
     /// SUITE-STANDARDS.md §1: on by default; Refresh still checks by hand.
     check_for_updates: bool,
+    /// macOS: new installs go into `~/Applications` (spec §3.4). Off by default.
+    home_applications: bool,
+    /// Linux with apt: install the `.deb` instead of the AppImage (spec §3.4, §4.4). Off by
+    /// default.
+    deb: bool,
 }
 
 impl Settings {
@@ -1104,7 +1183,12 @@ impl Settings {
     fn load() -> Settings {
         let json = Settings::path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
-        Settings { check_for_updates: value.get("check_for_updates").and_then(|v| v.as_bool()).unwrap_or(true) }
+        let flag = |name: &str, default: bool| value.get(name).and_then(|v| v.as_bool()).unwrap_or(default);
+        Settings { check_for_updates: flag("check_for_updates", true), home_applications: flag("home_applications", false), deb: flag("deb", false) }
+    }
+
+    fn choices(&self) -> launcher_sys::Choices {
+        launcher_sys::Choices { home_applications: self.home_applications, deb: self.deb }
     }
 
     fn save(&self) -> Result<(), String> {
@@ -1112,7 +1196,11 @@ impl Settings {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
-        let json = serde_json::json!({ "check_for_updates": self.check_for_updates });
+        let json = serde_json::json!({
+            "check_for_updates": self.check_for_updates,
+            "home_applications": self.home_applications,
+            "deb": self.deb,
+        });
         std::fs::write(&path, format!("{json:#}\n")).map_err(|e| e.to_string())
     }
 }

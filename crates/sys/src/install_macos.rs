@@ -306,9 +306,10 @@ fn admin_install(
     );
     match tool(OSASCRIPT, &["-e", &apple]) {
         Ok((true, _)) => Ok(()),
-        Ok((false, text)) if text.contains("-128") => {
-            Err(fail("Not installed. You can install it in your own Applications folder instead.", "the administrator prompt was cancelled"))
-        }
+        Ok((false, text)) if text.contains("-128") => Err(fail(
+            "Not installed. You can install it in your own Applications folder instead: choose that in Settings.",
+            "the administrator prompt was cancelled",
+        )),
         Ok((false, text)) => Err(fail(format!("{} couldn't be installed. Nothing was changed.", app.name), text.trim().to_string())),
         Err(e) => Err(fail(format!("{} couldn't be installed. Nothing was changed.", app.name), e)),
     }

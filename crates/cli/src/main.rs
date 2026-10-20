@@ -132,7 +132,7 @@ fn install(args: &[String]) -> ExitCode {
             eprintln!("method-launcher install: --to is for macOS only");
             return ExitCode::FAILURE;
         }
-        None => System.install(app, found.as_ref(), false, None, &report),
+        None => System.install(app, found.as_ref(), false, None, launcher_sys::Choices::default(), &report),
     };
     match result {
         Ok(found) => {
