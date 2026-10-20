@@ -29,8 +29,19 @@ is copied:
 - **On Windows and Linux:** the download must match the checksum the release publishes. A
   release without one can't be checked yet, and the launcher won't install it.
 
-If any check fails, nothing is installed and the card says why in one sentence. If an app
-is open when you update it, the launcher asks before quitting it.
+If any check fails, nothing is installed and the card says why in one sentence, with
+**Details** for the technical reason and, where it helps, a link: the release's page, or on
+Linux how to add FUSE, which AppImages need. If an app is open when you update it, the
+launcher asks before quitting it.
+
+While an install is waiting its turn, finding the release, downloading or checking, its card
+has **Cancel**. Nothing is changed. Once the launcher is copying the app into place, it
+finishes.
+
+Installs run one at a time; the others wait their turn.
+
+**Linux on ARM:** the launcher runs there, but the suite's apps have no Linux ARM builds
+yet, so each card links how to build the app from source.
 
 ## Recent files and the sample
 
@@ -57,13 +68,15 @@ Open Settings from its button beside Help, or with ⌘, (Ctrl+, on Windows and L
 
 - **About Method Launcher:** the version and the licence.
 - **User Guide:** this page.
-- **Keyboard Shortcuts:** the keys the launcher knows.
+- **Keyboard Shortcuts:** the keys the launcher knows: Refresh (⌘R, or Ctrl+R), Settings
+  (⌘, or Ctrl+,) and Esc to close Settings or a Help window.
 - **What's New:** the notes for this version.
 - **Check for Updates…** and **Check for Updates Automatically:** on by default. The switch
   covers both the launcher's own updates and its checks for new versions of the apps.
 - **Report a Bug:** opens a new bug report in your browser with the launcher's version and
   your system filled in. Nothing is sent until you submit it.
 - **Licenses and Notices:** the launcher's licence and notices.
+- **methodproduction.com:** the suite's site.
 
 ## The launcher's own updates
 
