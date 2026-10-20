@@ -87,18 +87,15 @@ pub fn install(
 /// confirmed with `dpkg-query`.
 fn install_deb(app: &App, stage: &dyn Fn(Stage)) -> Result<Installed, InstallError> {
     let fetched = fetch_verified(app, Kind::Deb, true, stage)?;
-    // apt-get installs a local file only by a path ending in `.deb`.
-    let deb = fetched.file.with_extension("deb");
-    std::fs::rename(&fetched.file, &deb).map_err(|e| fail("The download couldn't be prepared.", e.to_string()))?;
+    // Checked again by root on its own copy, so the file can't be swapped after this check.
+    let args = fetched
+        .sha256
+        .as_deref()
+        .and_then(|sha| crate::deb::pkexec_args(&fetched.file, sha))
+        .ok_or_else(|| fail("This release can't be checked yet, so it can't be installed from here.", "no SHA-256 for the .deb"))?;
     stage(Stage::Authorizing);
-    let out = Command::new("pkexec")
-        .args(["/usr/bin/apt-get", "install", "-y", "--"])
-        .arg(&deb)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output();
-    let _ = std::fs::remove_file(&deb);
+    let out = Command::new("pkexec").args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).output();
+    drop(fetched);
     let out = out.map_err(|e| fail(format!("{}'s system package couldn't be installed. Nothing was changed.", app.name), e.to_string()))?;
     crate::deb::result(app, out.status.code(), &String::from_utf8_lossy(&out.stderr))?;
     stage(Stage::Copying);
