@@ -3,6 +3,7 @@
 //! only tools that ship with it. What those tools print is read in [`parse`], tested
 //! everywhere.
 
+pub mod deb;
 pub mod fetch;
 pub mod net;
 pub mod parse;
@@ -82,6 +83,8 @@ pub enum Stage {
     Copying,
     /// Asking the running app to quit before it is replaced.
     Quitting,
+    /// Waiting for an administrator's password (Linux's system package).
+    Authorizing,
 }
 
 /// The person's choices about where and how apps are installed (docs/spec.md §3.4).
@@ -204,8 +207,7 @@ impl System {
         }
         #[cfg(target_os = "linux")]
         {
-            let _ = choices;
-            install_linux::install(app, current, quit, icon_png, stage)
+            install_linux::install(app, current, quit, icon_png, choices, stage)
         }
     }
 
