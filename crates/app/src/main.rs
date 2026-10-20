@@ -819,8 +819,12 @@ impl eframe::App for Launcher {
             self.rescan(&ctx);
             self.check_latest(&ctx);
         }
-        // "Checked 3 minutes ago" stays true.
+        // "Checked 3 minutes ago" stays true, and the 6-hour check comes round (spec §5.1).
         ctx.request_repaint_after(std::time::Duration::from_secs(30));
+        if self.checking == 0 && state::check_due(self.settings.check_for_updates, self.checked, std::time::SystemTime::now()) {
+            self.rescan(&ctx);
+            self.check_latest(&ctx);
+        }
 
         self.confirm_quit(&ctx);
         if let Some(window) = self.help {

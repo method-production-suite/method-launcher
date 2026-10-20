@@ -135,10 +135,10 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 ## M3: Updates, recent files, samples
 
-- **[partial] M** Updates run by the launcher (spec §5.1): "Update available", Update to X,
+- **[have] M** Updates run by the launcher (spec §5.1): "Update available", Update to X,
   ask before quitting an open app, Update all, and the switch. Have: all of it, on every
   system (Windows and Linux built, not yet run on those machines), checked at launch and on
-  Refresh. Missing: the 6-hour schedule.
+  Refresh, and every 6 hours while it stays open.
 - **[have] S** Recent files across the apps (spec §6).
 - **[have] S** Open Sample through `--open-sample`, with the fallback (Demo the suite).
 

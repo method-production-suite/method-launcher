@@ -249,6 +249,15 @@ pub fn primary_label(app: &App, primary: &Primary) -> String {
     }
 }
 
+/// How often the launcher looks for new versions while it stays open (spec §5.1).
+pub const CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// Whether the automatic check is due: the switch is on and the last check finished at least
+/// [`CHECK_EVERY`] ago. Before the first check, launch does it.
+pub fn check_due(on: bool, checked: Option<std::time::SystemTime>, now: std::time::SystemTime) -> bool {
+    on && checked.is_some_and(|at| now.duration_since(at).is_ok_and(|age| age >= CHECK_EVERY))
+}
+
 /// Whether a card's install can still be cancelled: waiting its turn, or finding, downloading
 /// or checking. Once it is quitting the app or copying, it finishes.
 pub fn cancellable(job: &Job) -> bool {
@@ -375,5 +384,16 @@ mod tests {
         assert!(!cancellable(&Job::Running(Stage::Copying)));
         assert!(!cancellable(&Job::Running(Stage::Quitting)));
         assert!(!cancellable(&Job::Idle));
+    }
+
+    #[test]
+    fn checks_again_every_six_hours_while_the_switch_is_on() {
+        let start = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000);
+        let later = |h: u64| start + std::time::Duration::from_secs(h * 3600);
+        assert!(!check_due(true, Some(start), later(5)));
+        assert!(check_due(true, Some(start), later(6)));
+        assert!(!check_due(false, Some(start), later(7)), "the switch is off");
+        assert!(!check_due(true, None, later(7)), "launch makes the first check");
+        assert!(!check_due(true, Some(later(7)), start), "a clock set back waits");
     }
 }

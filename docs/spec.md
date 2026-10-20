@@ -335,8 +335,9 @@ macOS first; each app's own updater stays a second way.
   time, with one question for all the apps that are open.
 - The launcher never downloads an app's update archive (its `.app.tar.gz`); it uses the same
   installer a new install does.
-- Timing: the launcher checks at launch and on Refresh (⌘R). The 6-hour schedule and the
-  Settings switch of SUITE-STANDARDS.md §1 come with Settings.
+- Timing: the launcher checks at launch, on Refresh (⌘R), and again whenever its last check
+  is 6 hours old while it stays open. Help's "Check for Updates Automatically" switch
+  (SUITE-STANDARDS.md §1) turns off the automatic checks; Refresh always checks.
 
 ### 5.2 The launcher itself
 
