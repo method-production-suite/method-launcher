@@ -57,16 +57,14 @@ install that needs the administrator prompt.
 
 ### Release go-aheads
 
-**0.1.2** (release PR #15, MReview's to merge). In order, before asking for the tag:
+**0.1.2** (release PR #15, merged). In order, before asking for the tag:
 
 1. The Windows and Linux test above.
 2. The key's repository secrets added (the owner's yes, through MOrg).
-3. rustls 0.23.46 is 14 days old on 2026-10-28; until then the release's crate-age check
-   refuses it.
-4. After the merge: the weekly build, then a rehearsal on `main`. The rehearsal is the first
+3. The weekly build, then a rehearsal on `main`. The rehearsal is the first
    real run of the update archive and `SHA256SUMS.minisig` signing with the real key, so read
    its log before the tag.
-5. Then the tag (the owner's yes). Ship it before any app's universal Mac release: launchers
+4. Then the tag (the owner's yes). Ship it before any app's universal Mac release: launchers
    0.1.0 and 0.1.1 refuse universal app bundles.
 
 ---
