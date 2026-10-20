@@ -111,8 +111,9 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 - **[have] S** Release pinning, checksums and hashing (spec §4.1).
 - **[have] S** Mach-O reader: every executable has this Mac's slice (apps), and the launcher's own build is exactly universal.
-- **[partial] M** Download with the redirect allow-list, limits and progress, through the
-  system's `curl` (spec §4.1). Cancel is missing.
+- **[have] M** Download with the redirect allow-list, limits and progress, through the
+  system's `curl` (spec §4.1), and Cancel: a waiting install leaves the queue, and a running
+  one stops while it is finding, downloading or checking.
 - **[have] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
   notarisation, arm64, links) and copy with staging and rename (spec §4.2); updates over
   the installed copy, and replacing an earlier-named copy.

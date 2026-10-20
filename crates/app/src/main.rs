@@ -279,6 +279,10 @@ impl Launcher {
                             set(&mut self.jobs, index, Job::Idle);
                             self.notice = Some((format!("{app} {} is installed.", installed.version), false));
                         }
+                        Err(error) if error.cancelled => {
+                            set(&mut self.jobs, index, Job::Idle);
+                            self.notice = Some((format!("Cancelled. {app} wasn't changed."), false));
+                        }
                         Err(error) => set(&mut self.jobs, index, Job::Failed(error)),
                     }
                     self.rescan(ctx);
@@ -403,6 +407,17 @@ impl Launcher {
             }
             Some(false) => self.confirm = None,
             None => {}
+        }
+    }
+
+    /// Cancel on a card: a waiting install leaves the queue; a running one stops if it is still
+    /// finding, downloading or checking (spec §4.1).
+    fn cancel(&mut self, index: usize) {
+        if matches!(self.jobs.get(index), Some(Job::Waiting)) {
+            self.queue.retain(|(i, _)| *i != index);
+            set(&mut self.jobs, index, Job::Idle);
+        } else if let Some(app) = self.apps.get(index) {
+            System.cancel(app);
         }
     }
 
@@ -565,6 +580,9 @@ impl Launcher {
                         ui.add_space(4.0);
                     } else if main != Primary::None && link(ui, &primary_label(app, &main)) {
                         self.act(ui.ctx(), index, app, &found, &main);
+                    }
+                    if state::cancellable(&job) && link(ui, "Cancel") {
+                        self.cancel(index);
                     }
                     if let Job::Failed(error) = &job
                         && let Some((label, url)) = &error.link
