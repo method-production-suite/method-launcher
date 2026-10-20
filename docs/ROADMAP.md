@@ -137,12 +137,13 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   system (Windows and Linux built, not yet run on those machines), checked at launch and on
   Refresh. Missing: the 6-hour schedule.
 - **[have] S** Recent files across the apps (spec §6).
-- **[missing] S** Open Sample through `--open-sample`, with the fallback.
+- **[have] S** Open Sample through `--open-sample`, with the fallback (Demo the suite).
 
 ## M4: Help, identity, its own updates
 
-- **[missing] S** Help menu (SUITE-STANDARDS.md §4), About, Licenses and Notices, Report a
-  Bug.
+- **[have] S** Help menu (SUITE-STANDARDS.md §4): About, User Guide (docs/user-guide.md),
+  Keyboard Shortcuts, What's New, Check for Updates…, Report a Bug prefilled with the version
+  and system, Licenses and Notices, methodproduction.com.
 - **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
   (scripts/make-icons.py). Missing: the wordmark.
 - **[partial] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and Intel), with

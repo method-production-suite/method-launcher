@@ -3,6 +3,7 @@
 //! button: Open, Update, or Install. Installing and updating run the checked install of
 //! launcher-sys (spec §4) off the interface thread, one at a time.
 
+mod help;
 mod images;
 mod state;
 mod theme;
@@ -114,6 +115,8 @@ struct Launcher {
     details: HashSet<usize>,
     /// One line about the last thing the person did, and whether it went wrong.
     notice: Option<(String, bool)>,
+    /// The Help window that is open, if any.
+    help: Option<help::Window>,
     focused: bool,
 }
 
@@ -154,6 +157,7 @@ impl Launcher {
             wordmark: [texture("wordmark".into(), WORDMARK), texture("wordmark-dark".into(), WORDMARK_DARK)],
             details: HashSet::new(),
             notice: None,
+            help: None,
             focused: true,
         };
         #[cfg(target_os = "macos")]
@@ -666,12 +670,30 @@ impl Launcher {
             });
     }
 
-    /// Help (SUITE-STANDARDS.md §1, §4): Check for Updates…, the "Check for Updates
-    /// Automatically" switch (on by default; it covers the launcher's own updates and the
-    /// apps' checks), What's New, Report a Bug and the suite's site.
+    /// Help (SUITE-STANDARDS.md §1, §4): About, User Guide, Keyboard Shortcuts, What's New,
+    /// Check for Updates…, the "Check for Updates Automatically" switch (on by default; it
+    /// covers the launcher's own updates and the apps' checks), Report a Bug (prefilled with
+    /// the version and system), Licenses and Notices, and the suite's site.
     fn help_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::containers::menu::MenuButton::new(egui::RichText::new("Help").size(15.0)).ui(ui, |ui| {
             ui.set_min_width(260.0);
+            if ui.button("About Method Launcher").clicked() {
+                self.help = Some(help::Window::About);
+                ui.close();
+            }
+            if ui.button("User Guide").clicked() {
+                self.link(help::USER_GUIDE);
+                ui.close();
+            }
+            if ui.button("Keyboard Shortcuts").clicked() {
+                self.help = Some(help::Window::Shortcuts);
+                ui.close();
+            }
+            if ui.button("What's New in Method Launcher").clicked() {
+                self.link(&help::whats_new_url());
+                ui.close();
+            }
+            ui.separator();
             let unavailable = self.updates.unavailable();
             let check = ui.add_enabled(unavailable.is_none() || cfg!(not(target_os = "macos")), egui::Button::new("Check for Updates…"));
             if check.clicked() {
@@ -695,16 +717,16 @@ impl Launcher {
                 }
             }
             ui.separator();
-            if ui.button("What's New in Method Launcher").clicked() {
-                self.link(&format!("https://github.com/method-production-suite/method-launcher/releases/tag/v{}", env!("CARGO_PKG_VERSION")));
+            if ui.button("Report a Bug").clicked() {
+                self.link(&help::new_issue_url(help::VERSION, &help::os_label()));
                 ui.close();
             }
-            if ui.button("Report a Bug").clicked() {
-                self.link("https://github.com/method-production-suite/method-launcher/issues/new");
+            if ui.button("Licenses and Notices").clicked() {
+                self.help = Some(help::Window::Licenses(0));
                 ui.close();
             }
             if ui.button("methodproduction.com").clicked() {
-                self.link("https://methodproduction.com");
+                self.link(help::SUITE_WEBSITE);
                 ui.close();
             }
             ui.separator();
@@ -785,6 +807,9 @@ impl eframe::App for Launcher {
         ctx.request_repaint_after(std::time::Duration::from_secs(30));
 
         self.confirm_quit(&ctx);
+        if let Some(window) = self.help {
+            self.help = help::show(&ctx, window);
+        }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(PAD)).show(ui, |ui| {
             let muted = ui.visuals().weak_text_color();
             // Header: the suite's wordmark and the promise on the left, the launcher's own

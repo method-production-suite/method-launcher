@@ -160,9 +160,9 @@ The macOS menu bar, or the window's own menu bar on Windows and Linux.
 - **Method Launcher** (macOS only): About, Settings, Check for Updates..., Quit.
 - **File**: Open Recent (the same list as §3.2); on Windows and Linux also Settings and
   Quit (Exit on Windows).
-- **Help** (SUITE-STANDARDS.md §4): User Guide, Keyboard Shortcuts, What's New, Check for
-  Updates..., Report a Bug, Licenses and Notices, methodproduction.com; on Windows and Linux
-  also About.
+- **Help** (SUITE-STANDARDS.md §4): About, User Guide, Keyboard Shortcuts, What's New, Check
+  for Updates..., Report a Bug, Licenses and Notices, methodproduction.com. The window draws
+  its own Help menu on every system, so About is there on the Mac too.
 
 ## 4. Install and verify
 
