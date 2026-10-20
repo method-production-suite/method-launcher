@@ -43,46 +43,43 @@ Decided by the owner, 2026-10-18:
 
 ### Tests that need the owner's hands
 
-**Install and update on a real Windows and a real Linux machine** (0.1.2 shipped before this
-test, on the owner's yes, 2026-10-20). They are built and tested on CI, but no one has run
-them on those systems yet. Ready to run, on each
-machine, with the launcher built from `main` (`cargo run --locked -p method-launcher`) or
-from its command line:
+**Install and update on a real Windows and a real Linux machine.** Built and tested
+automatically; no one has run them on those systems yet (0.1.2 and 0.2.0 shipped before this
+test, on the owner's yes). Download the launcher from the latest release
+(`Method-Launcher-windows-x64-setup.exe`, `Method-Launcher-linux-x86_64.AppImage` or the
+`.deb`), then on each machine:
 
-1. Windows x64: `method-launcher install schedule`. The setup opens; finish it. Expect
-   "installed Method Schedule ..." and Schedule in the Start menu. Then in the window:
-   Schedule shows its version and Open works.
+1. Windows x64: install Method Schedule from its card. The setup opens; finish it. Expect
+   Schedule in the Start menu, its version on the card, and Open working.
 2. Windows, update: with an older Schedule installed and open, click Update to X. Expect the
    question first, Schedule asked to close, then the new version.
-3. Linux x86_64: `method-launcher install schedule`. Expect
-   `~/Applications/Method-Schedule.AppImage`, "Method Schedule" in the desktop's app menu
-   with its icon, and the version on its card.
+3. Linux x86_64: install Method Schedule. Expect `~/Applications/Method-Schedule.AppImage`,
+   "Method Schedule" in the desktop's app menu with its icon, and the version on its card.
 4. Linux, update: the same as step 2, over the AppImage.
-5. On both: a release without a checksum file (or a tampered download) is refused with "This
-   release can't be checked yet" or "doesn't match the release's checksum".
+5. Linux with apt: Settings > Install apps as > System package, then install an app. Expect
+   the password prompt, then the app listed by `dpkg-query -W method-<noun>`. Dismiss the
+   prompt once: expect "Not installed. You can install the AppImage instead."
+6. On both: Cancel during a download leaves the card as it was; a release without a
+   checksum file (or a tampered download) is refused with "This release can't be checked
+   yet" or "doesn't match the release's checksum".
+7. Linux on ARM (a Raspberry Pi 5 or an ARM laptop): the launcher's arm64 AppImage opens
+   and shows the apps, each linking how to build it.
 
-**Still to try on the Mac:** Update over an app that is open (the quit question), an
-install that needs the administrator prompt, and Settings > "Open the launcher when I log
-in": turn it on, log out and back in, and the launcher opens (the same on Windows and Linux
-with the real-machine test above).
+**Still to try on the Mac:**
+
+1. The launcher updating itself: with 0.2.0 installed, Help > Check for Updates once 0.2.1
+   is out. Expect "Update ready", Restart to Update, and 0.2.1 in About.
+2. Update over an app that is open (the quit question).
+3. An install that needs the administrator prompt.
+4. Settings > "Open the launcher when I log in": turn it on, log out and back in, and the
+   launcher opens (the same on Windows and Linux with the tests above).
 
 ### Release go-aheads
 
-**0.2.0:** published 2026-10-20 (tag and publish on the owner's yes).
-
-**0.1.2** (release PR #15, merged). In order, before asking for the tag:
-
-1. Skipped on the owner's yes (2026-10-20): the Windows and Linux test above, now for after
-   the release.
-2. Done 2026-10-20: the update key's repository secrets are added (the owner's yes, through MOrg).
-3. Done 2026-10-20: the weekly build passed on every system, and the rehearsal on `main`
-   passed. Its Mac download and update archive are universal, notarised and stapled, the
-   archive's signature checks against the app's key (E115E2CD9AEE0DF9), runs under Rosetta,
-   and `latest.json` built from it lists both Mac platforms. `SHA256SUMS.minisig` is signed
-   only in the draft-release job, which a rehearsal skips: its first real run is the tag,
-   and it checks the signature against the app's key before the draft is made.
-4. Done 2026-10-20: tagged v0.1.2 on 17953ae (the owner's yes). Publishing is a separate yes. Ship it before any app's universal Mac release: launchers
-   0.1.0 and 0.1.1 refuse universal app bundles.
+- **0.2.1: waiting for the owner's yes** (tag and publish). The security fix for the
+  launcher's own updater (RUSTSEC-2026-0382 and -0381, #28) and "Open the launcher when I
+  log in" (#27). Rehearsed green on 3a6dc36 (run 39484985446), all five builds.
+- 0.2.0: published 2026-10-20. 0.1.2: published 2026-10-20.
 
 ---
 
@@ -166,11 +163,11 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 - **[have] S** The mark, wordmark and app icon: the suite's four pages, as the app icon
   (scripts/make-icons.py), and "method launcher" in the family's strokes
   (scripts/make-brand.py, from the website's glyphs).
-- **[partial] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and Intel), with
-  the Help menu's switch and Restart to Update; on Windows and Linux, a link to the download.
-  Have: all of it, and the release steps (updater archive, `latest.json`,
-  `SHA256SUMS.minisig`). Waiting: the key's repository secrets (the owner's yes), then a
-  first release to update from.
+- **[have] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and
+  Intel), with the Help menu's switch and Restart to Update; on Windows and Linux, a link to
+  the download. Every release since 0.1.2 carries the signed updater archive, `latest.json`
+  and `SHA256SUMS.minisig`. The first update a person sees is 0.2.0 to 0.2.1 (a Mac test
+  above).
 
 ## M5: Release
 
@@ -189,5 +186,18 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   state, drawn offscreen (crates/app/src/screens.rs, SUITE-STANDARDS.md §7), into
   `assets/screens/` and `site/img/`.
 - **[have] S** `site/`: the launcher's page on the suite's site (`site/launcher.html`, the
-  hub's fragment for `/launcher/`), its pictures, mark, wordmark and favicon, for MOrg to
-  sync. Built on recommendation (see Waiting on the owner).
+  hub's fragment for `/launcher/`) and its pictures, which MOrg syncs at each release tag
+  (live from 0.2.0). The mark, wordmark and favicon are there too, unused by the hub page.
+  Built on recommendation (see Waiting on the owner).
+
+## Next
+
+- **[missing] S** A clearer password prompt for the Linux `.deb`: the system now names
+  `/bin/sh` as asking. A polkit action file (shipped by the launcher's own `.deb`) can say
+  "Method Launcher wants to install Method Budget". The AppImage launcher keeps the plain
+  prompt. (MReview's idea, 2026-10-20.)
+- **[missing] S** Windows code signing: the release workflow's signtool step is ready and
+  off. It needs a code-signing certificate, the owner's call (cost and who holds it), after
+  which the launcher can also check Authenticode on each app's setup.
+- **[missing] S** Cross-app follow-through: as each app adds `SHA256SUMS`, `--open-sample`
+  and `recent.json` (above), drop the launcher's fallbacks for it and say so in the notes.
