@@ -1,7 +1,7 @@
 //! Installing a suite app on macOS from its latest release's `.dmg` (docs/spec.md §4.1,
 //! §4.2): pin the release, download, check the checksum where the release has one, mount
-//! read-only, verify the app (bundle id, the suite's Developer ID, notarisation, Apple
-//! silicon only, no links out of the bundle), then copy it beside its destination and swap it
+//! read-only, verify the app (bundle id, the suite's Developer ID, notarisation, code for this
+//! Mac's chip in every executable, no links out of the bundle), then copy it beside its destination and swap it
 //! into place. Nothing downloaded runs before every check has passed; every failure removes
 //! what it made.
 //!
@@ -135,31 +135,49 @@ pub fn verify_bundle(app: &App, bundle: &Path) -> Result<(), InstallError> {
         Ok((_, text)) => return Err(unverified(format!("notarisation: {}", text.trim()))),
         Err(e) => return Err(unverified(e)),
     }
-    check_files(bundle, bundle).map_err(unverified)
+    let cpu = macho::host_cpu().ok_or_else(|| unverified("this Mac's chip isn't one the suite builds for".into()))?;
+    check_files(bundle, bundle, cpu).map_err(|problem| match problem {
+        // The release has no code for this Mac's chip: on an Intel Mac, a release from before
+        // the app went universal.
+        Problem::NotForThisMac(details) if cpu == macho::CPU_X86_64 => {
+            fail(format!("This version of {} needs an Apple silicon Mac.", app.name), details)
+        }
+        Problem::NotForThisMac(details) | Problem::Other(details) => unverified(details),
+    })
 }
 
-/// Every Mach-O file is arm64 only, and no link points outside the bundle.
-fn check_files(root: &Path, dir: &Path) -> Result<(), String> {
-    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+enum Problem {
+    /// A Mach-O with no slice for this Mac's chip.
+    NotForThisMac(String),
+    Other(String),
+}
+
+impl From<String> for Problem {
+    fn from(text: String) -> Self {
+        Problem::Other(text)
+    }
+}
+
+/// Every Mach-O file has code for this Mac's chip (universal, or this chip's alone), and no
+/// link points outside the bundle.
+fn check_files(root: &Path, dir: &Path, cpu: u32) -> Result<(), Problem> {
+    for entry in std::fs::read_dir(dir).map_err(|e| Problem::Other(e.to_string()))?.flatten() {
         let path = entry.path();
-        let kind = entry.file_type().map_err(|e| e.to_string())?;
+        let kind = entry.file_type().map_err(|e| Problem::Other(e.to_string()))?;
         if kind.is_symlink() {
-            let target = std::fs::read_link(&path).map_err(|e| e.to_string())?;
+            let target = std::fs::read_link(&path).map_err(|e| Problem::Other(e.to_string()))?;
             let resolved = normalise(&path.parent().unwrap_or(root).join(target));
             if !resolved.starts_with(root) {
-                return Err(format!("{} links outside the app", path.display()));
+                return Err(Problem::Other(format!("{} links outside the app", path.display())));
             }
         } else if kind.is_dir() {
-            check_files(root, &path)?;
+            check_files(root, &path, cpu)?;
         } else if kind.is_file() {
             let mut head = vec![0; macho::HEADER_BYTES];
-            let n = std::fs::File::open(&path).and_then(|mut f| f.read(&mut head)).map_err(|e| e.to_string())?;
-            if !macho::passes(head.get(..n).unwrap_or_default()) {
-                return Err(format!(
-                    "{} is not built for Apple silicon only ({:?})",
-                    path.display(),
-                    macho::classify(head.get(..n).unwrap_or_default())
-                ));
+            let n = std::fs::File::open(&path).and_then(|mut f| f.read(&mut head)).map_err(|e| Problem::Other(e.to_string()))?;
+            let head = head.get(..n).unwrap_or_default();
+            if !macho::runs_on(head, cpu) {
+                return Err(Problem::NotForThisMac(format!("{} has no code for this Mac's chip ({:?})", path.display(), macho::classify(head))));
             }
         }
     }

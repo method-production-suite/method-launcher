@@ -7,7 +7,7 @@ whichever system you use.
 
 - **Install with one click.** Each app comes from its own latest release on GitHub, and is
   checked before anything runs: on a Mac, signed by the suite's Developer ID, notarised and
-  built for Apple silicon; on Windows and Linux, matched against the release's checksums. If
+  with code for your Mac's chip; on Windows and Linux, matched against the release's checksums. If
   a check fails, nothing is installed.
 - **Updates in one place.** The launcher shows which apps have a new version and installs
   it the same careful way, one app or all of them, asking before it quits an open app.
@@ -30,7 +30,7 @@ Status: first release, 0.1.0. See [docs/spec.md](docs/spec.md) for what it does 
 
 | Platform | Built | Signed | Tested |
 | --- | --- | --- | --- |
-| macOS (Apple silicon) | Installer | Developer ID, notarised | Installs and updates tried with real releases |
+| macOS (Apple silicon and Intel) | Installer | Developer ID, notarised | Installs and updates tried with real releases |
 | Windows (x64) | Installer | No | Weekly build and tests |
 | Linux (x86_64) | .deb and AppImage | No | Weekly build and tests |
 | Linux (arm64) | From source | No | Weekly build and tests |
@@ -42,7 +42,7 @@ Download the launcher for your system from its
 
 | System | Download |
 | --- | --- |
-| macOS (Apple silicon) | [Method-Launcher-macOS.dmg](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-macOS.dmg) |
+| macOS (Apple silicon and Intel) | [Method-Launcher-macOS.dmg](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-macOS.dmg) |
 | Windows (x64) | [Method-Launcher-windows-x64-setup.exe](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-windows-x64-setup.exe) |
 | Linux (Debian, Ubuntu) | [Method-Launcher-linux-amd64.deb](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-amd64.deb) |
 | Linux (any x86_64) | [Method-Launcher-linux-x86_64.AppImage](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-x86_64.AppImage) |

@@ -23,7 +23,7 @@ pub const SETUP_EXE: &str = "Method-Launcher-windows-x64-setup.exe";
 
 /// Options shared by the packaging tasks: `--target <triple>`, `--sign <identity>`,
 /// `--no-build`, `--appimagetool <path>`, `--runtime <path>`, `--iscc <path>`.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Options {
     target: Option<String>,
     sign: Option<String>,
@@ -93,8 +93,31 @@ fn bundle_dir(platform: &str) -> PathBuf {
     target_dir().join("bundle").join(platform)
 }
 
+/// The two Mac targets a universal build joins (SUITE-STANDARDS.md §3, from 2026-10-19).
+pub const MAC_TARGETS: [&str; 2] = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+
+/// `--target universal-apple-darwin`: the app built for both Mac targets (unless `--no-build`,
+/// when both must already be built) and joined into one binary with `lipo -create`.
+fn build_universal(options: &Options) -> Result<PathBuf, String> {
+    let mut slices = Vec::new();
+    for target in MAC_TARGETS {
+        let one = Options { target: Some(target.to_string()), ..options.clone() };
+        slices.push(build_app(&one)?);
+    }
+    let out = target_dir().join("universal-apple-darwin").join("release");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let binary = out.join(APP_BIN);
+    let mut args = vec![os("-create"), os("-output"), binary.as_os_str()];
+    args.extend(slices.iter().map(|p| p.as_os_str()));
+    run("lipo", &args)?;
+    Ok(binary)
+}
+
 /// Builds the app in release mode (unless `--no-build`) and returns its binary.
 fn build_app(options: &Options) -> Result<PathBuf, String> {
+    if options.target.as_deref() == Some("universal-apple-darwin") {
+        return build_universal(options);
+    }
     if !options.no_build {
         let mut args = vec!["build", "--release", "--locked", "--package", APP_PACKAGE, "--bin", APP_BIN];
         if let Some(target) = &options.target {

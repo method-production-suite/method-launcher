@@ -57,7 +57,17 @@ install that needs the administrator prompt.
 
 ### Release go-aheads
 
-None yet.
+**0.1.2** (release PR #15, MReview's to merge). In order, before asking for the tag:
+
+1. The Windows and Linux test above.
+2. The key's repository secrets added (the owner's yes, through MOrg).
+3. rustls 0.23.46 is 14 days old on 2026-10-28; until then the release's crate-age check
+   refuses it.
+4. After the merge: the weekly build, then a rehearsal on `main`. The rehearsal is the first
+   real run of the update archive and `SHA256SUMS.minisig` signing with the real key, so read
+   its log before the tag.
+5. Then the tag (the owner's yes). Ship it before any app's universal Mac release: launchers
+   0.1.0 and 0.1.1 refuse universal app bundles.
 
 ---
 
@@ -97,7 +107,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 ## M2: Install
 
 - **[have] S** Release pinning, checksums and hashing (spec §4.1).
-- **[have] S** Mach-O reader: every executable is arm64 only.
+- **[have] S** Mach-O reader: every executable has this Mac's slice (apps), and the launcher's own build is exactly universal.
 - **[partial] M** Download with the redirect allow-list, limits and progress, through the
   system's `curl` (spec §4.1). Cancel is missing.
 - **[have] M** macOS: mount, verify (bundle id, Developer ID team XSRB3D643J,
@@ -132,7 +142,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   Bug.
 - **[partial] S** The mark, wordmark and app icon in the chosen accent. Have: the app icon
   (scripts/make-icons.py). Missing: the wordmark.
-- **[partial] M** Its own updates (spec §5.2): `method-update` on Apple silicon Macs, with
+- **[partial] M** Its own updates (spec §5.2): `method-update` on Macs (Apple silicon and Intel), with
   the Help menu's switch and Restart to Update; on Windows and Linux, a link to the download.
   Have: all of it, and the release steps (updater archive, `latest.json`,
   `SHA256SUMS.minisig`). Waiting: the key's repository secrets (the owner's yes), then a

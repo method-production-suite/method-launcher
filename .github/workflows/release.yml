@@ -1,4 +1,4 @@
-# Release builds on a version tag: the app packaged for macOS on Apple silicon (.dmg), Windows
+# Release builds on a version tag: the app packaged for macOS, universal (.dmg), Windows
 # (Inno Setup installer) and Linux (.deb and AppImage), under version-free names so the
 # website can link releases/latest/download/<file>, attached to a DRAFT GitHub release for a
 # person to check and publish. Nothing is published by this workflow. How to cut a release:
@@ -29,7 +29,7 @@
 #                      1Password, key ID E115E2CD9AEE0DF9; its public half is PUBKEY in
 #                      crates/app/src/updates.rs). With the key and a notarized build, the
 #                      release also carries the updater archive
-#                      Method-Launcher_<version>_aarch64.app.tar.gz, its .sig and latest.json,
+#                      Method-Launcher_<version>_universal.app.tar.gz, its .sig and latest.json,
 #                      which installed launchers read, and SHA256SUMS.minisig (`cargo xtask
 #                      updater-archive`, `update-manifest`, `sign-file`; xtask/src/updater.rs).
 #                      Without the key the release is the same, minus those files.
@@ -157,8 +157,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Apple silicon only (the suite standard).
-          - name: macos-arm64
+          # Universal: Intel and Apple silicon in one app (the suite standard from 2026-10-19).
+          - name: macos-universal
             os: macos-latest
           # Inno Setup 6 comes with this image.
           - name: windows-x64
@@ -196,20 +196,22 @@ jobs:
 
       - name: Add the Rust target (macOS)
         if: runner.os == 'macOS'
-        run: rustup target add aarch64-apple-darwin
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       # Every build runs before any secret reaches the runner, so no dependency's build
       # script runs while the signing keychain or the notarization key exists. The packaging
       # steps below use --no-build.
       - name: Build the app and the packaging tool
-        env:
-          TARGET: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin' || '' }}
         run: |
           set -euo pipefail
-          target=()
-          if [ -n "$TARGET" ]; then target=(--target "$TARGET"); fi
-          # ${a[@]+...}: an empty array is "unbound" under set -u in the Mac runner's bash 3.2.
-          cargo build --release --locked --package method-launcher --bin method-launcher-app ${target[@]+"${target[@]}"}
+          if [ "$RUNNER_OS" = macOS ]; then
+            # Both Mac slices, joined later by `bundle-macos --target universal-apple-darwin`.
+            for target in aarch64-apple-darwin x86_64-apple-darwin; do
+              cargo build --release --locked --package method-launcher --bin method-launcher-app --target "$target"
+            done
+          else
+            cargo build --release --locked --package method-launcher --bin method-launcher-app
+          fi
           cargo build --locked --package xtask
 
       - name: Decide what gets signed
@@ -279,7 +281,7 @@ jobs:
           # The xtask binary built before any secret, run directly: never cargo once a key is
           # here, since a stale fingerprint would rebuild and run build scripts beside it.
           test -x target/debug/xtask
-          target/debug/xtask bundle-macos --target aarch64-apple-darwin --no-build ${sign[@]+"${sign[@]}"}
+          target/debug/xtask bundle-macos --target universal-apple-darwin --no-build ${sign[@]+"${sign[@]}"}
 
       - name: Notarize and staple the app (macOS)
         if: runner.os == 'macOS' && env.MACOS_NOTARIZE == 'yes'
@@ -321,10 +323,10 @@ jobs:
           app="target/bundle/macos/Method Launcher.app"
           dmg="target/bundle/macos/Method-Launcher-macOS.dmg"
           codesign --verify --deep --strict --verbose=2 "$app"
-          # Apple silicon only: a universal or Intel binary fails here.
+          # Universal: exactly Intel and Apple silicon, compared, not just printed.
           archs="$(lipo -archs "$app/Contents/MacOS/method-launcher-app")"
-          if [ "$archs" != arm64 ]; then
-            echo "::error::The app binary is \"$archs\", not arm64 only."
+          if [ "$archs" != "x86_64 arm64" ]; then
+            echo "::error::The app binary is \"$archs\", not exactly \"x86_64 arm64\"."
             exit 1
           fi
           plutil -p "$app/Contents/Info.plist" | grep -F '"CFBundleIdentifier" => "com.methodlauncher.desktop"'
@@ -488,7 +490,7 @@ jobs:
           # The update manifest, when the Mac build brought the signed updater archive. It is
           # checked against the app's own public key before it is written.
           version="${TAG#v}"
-          archive="Method-Launcher_${version}_aarch64.app.tar.gz"
+          archive="Method-Launcher_${version}_universal.app.tar.gz"
           if [ -s "dist/$archive" ] && [ -s "dist/$archive.sig" ]; then
             target/debug/xtask update-manifest --dir dist --version "$version" --out dist/latest.json
           else

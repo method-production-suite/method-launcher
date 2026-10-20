@@ -14,7 +14,7 @@ were decided by the owner on 2026-10-18 (ROADMAP.md; SUITE-STANDARDS.md §2 and 
 
 | System | Launcher builds | Apps it can install |
 |---|---|---|
-| macOS, Apple silicon | yes | yes, the `.dmg` |
+| macOS, Apple silicon and Intel (universal from 0.1.2) | yes | yes, the `.dmg`; on an Intel Mac only an app's universal releases |
 | Windows x64 | yes | yes, the setup `.exe` |
 | Linux x86_64 | yes | yes, the `.AppImage` (or the `.deb`, §4.4) |
 | Linux arm64 | yes | not yet: the suite publishes no arm64 app builds, so each card says so and links the app's build-from-source steps |
@@ -224,7 +224,12 @@ later), closes that gap; the launcher checks it when it is there.
      no other. The team id is a constant in code with a test that pins it.
    - **Notarised**: `spctl --assess --type execute -vv` accepts it as a notarised Developer
      ID app (the ticket is stapled, so this works offline too).
-   - **Apple silicon**: every Mach-O file in the bundle is thin arm64 or fat with arm64
+   - **This Mac's chip** (from 0.1.2, when the suite's Mac builds went universal): every
+     Mach-O file in the bundle has a slice for this Mac's own chip, so a universal app installs
+     on any Mac and an Apple-silicon-only release installs only on Apple silicon. On an Intel
+     Mac such a release says "This version of Method <Noun> needs an Apple silicon Mac" and
+     offers nothing to install; the launcher knows it before downloading when the release's
+     `latest.json` has no `darwin-x86_64` entry. (Until 0.1.2: every Mach-O file in the bundle is thin arm64 or fat with arm64
      slices alone, read by the launcher in Rust (the same rule the release workflows
      enforce).
    - **No escaping links**: no symbolic link in the bundle points outside it.
@@ -311,7 +316,7 @@ macOS first; each app's own updater stays a second way.
   the card's main button becomes **Update to X**.
 - **Update** downloads the latest release's installer and checks it exactly as an install
   does (§4.1, and §4.2 to §4.4 for each system: on macOS the Developer ID of team
-  XSRB3D643J, notarisation, arm64 only and `SHA256SUMS` where the release has it), then
+  XSRB3D643J, notarisation, code for this Mac's chip and `SHA256SUMS` where the release has it), then
   replaces the installed copy. On macOS the old bundle is moved aside, the new one renamed
   into place, and the old one removed only once that worked. On Windows the setup upgrades
   in place; on Linux the AppImage is replaced through its staging name, the `.deb` through
@@ -338,7 +343,7 @@ macOS first; each app's own updater stays a second way.
 The owner's call (2026-10-19): "method launcher should have the same auto update
 functionality that the individual apps have".
 
-- **On Apple silicon Macs** the launcher updates itself through the suite's updater,
+- **On Macs** (Apple silicon and Intel) the launcher updates itself through the suite's updater,
   `method-update`, pinned by full commit (SUITE-STANDARDS.md §1, Method Budget's way): a
   quiet check 2 minutes after launch and every 6 hours; when a newer release is out it
   downloads it, checks its minisign signature against the launcher's own key (`PUBKEY`,

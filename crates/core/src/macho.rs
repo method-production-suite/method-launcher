@@ -1,5 +1,7 @@
-//! Is a file an Apple-silicon-only Mach-O? (docs/spec.md §4.2, macOS.) The launcher reads the
-//! headers itself, so the check doesn't need developer tools on the Mac. Only the start of a
+//! What a Mach-O file is built for (docs/spec.md §4.2, macOS): whether it runs on this Mac (it
+//! has this Mac's own slice), and whether it is universal (exactly Intel and Apple silicon,
+//! the suite's Mac builds from 2026-10-19). The launcher reads the headers itself, so the
+//! check doesn't need developer tools on the Mac. Only the start of a
 //! file is needed: [`HEADER_BYTES`] covers a fat header with every slice an app could carry.
 
 /// How many bytes from the start of a file [`classify`] needs at most.
@@ -7,6 +9,20 @@ pub const HEADER_BYTES: usize = 4096;
 
 /// `CPU_TYPE_ARM64` from `<mach/machine.h>`.
 pub const CPU_ARM64: u32 = 0x0100_000C;
+
+/// `CPU_TYPE_X86_64` from `<mach/machine.h>`.
+pub const CPU_X86_64: u32 = 0x0100_0007;
+
+/// This Mac's own CPU type, as the launcher was built for it.
+pub const fn host_cpu() -> Option<u32> {
+    if cfg!(target_arch = "aarch64") {
+        Some(CPU_ARM64)
+    } else if cfg!(target_arch = "x86_64") {
+        Some(CPU_X86_64)
+    } else {
+        None
+    }
+}
 
 /// What the start of a file says it is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,17 +75,49 @@ pub fn classify(head: &[u8]) -> Kind {
     }
 }
 
-/// True when a file with these first bytes passes the architecture check: either not Mach-O
-/// at all, or Mach-O with arm64 code only.
+/// True when a file with these first bytes passes the old Apple-silicon-only check: either
+/// not Mach-O at all, or Mach-O with arm64 code only.
 pub fn passes(head: &[u8]) -> bool {
     matches!(classify(head), Kind::NotMachO | Kind::Arm64Only)
+}
+
+/// The CPU types a Mach-O holds: one for a thin file, each slice's for a fat one; empty for a
+/// file that isn't Mach-O; `None` for one that is cut short or malformed.
+pub fn cpus(head: &[u8]) -> Option<Vec<u32>> {
+    match classify(head) {
+        Kind::NotMachO => Some(Vec::new()),
+        Kind::Arm64Only => Some(match u32_at(head, 0, true) {
+            Some(0xCAFE_BABE | 0xCAFE_BABF) => {
+                let count = u32_at(head, 4, true).unwrap_or(0) as usize;
+                vec![CPU_ARM64; count]
+            }
+            _ => vec![CPU_ARM64],
+        }),
+        Kind::Other(cpus) => Some(cpus),
+        Kind::Damaged => None,
+    }
+}
+
+/// Whether a file runs on a Mac with this CPU: not Mach-O at all, or a Mach-O with a slice for
+/// it.
+pub fn runs_on(head: &[u8], cpu: u32) -> bool {
+    cpus(head).is_some_and(|cpus| cpus.is_empty() || cpus.contains(&cpu))
+}
+
+/// Whether a Mach-O is exactly universal: an Intel slice and an Apple silicon slice, nothing
+/// else (the suite's Mac builds, SUITE-STANDARDS.md §3).
+pub fn universal(head: &[u8]) -> bool {
+    cpus(head).is_some_and(|mut cpus| {
+        cpus.sort_unstable();
+        cpus == [CPU_X86_64, CPU_ARM64]
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const X86_64: u32 = 0x0100_0007;
+    const X86_64: u32 = CPU_X86_64;
 
     fn thin64(cpu: u32) -> Vec<u8> {
         let mut b = vec![0xCF, 0xFA, 0xED, 0xFE];
@@ -120,6 +168,30 @@ mod tests {
         assert_eq!(classify(&[]), Kind::NotMachO);
         // A Java class file: 0xCAFEBABE, then minor and major version.
         assert_eq!(classify(&[0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34]), Kind::NotMachO);
+    }
+
+    #[test]
+    fn runs_on_this_mac_by_its_own_slice() {
+        // An Apple-silicon-only app doesn't run on an Intel Mac; a universal one runs on both.
+        assert!(runs_on(&thin64(CPU_ARM64), CPU_ARM64));
+        assert!(!runs_on(&thin64(CPU_ARM64), CPU_X86_64));
+        assert!(runs_on(&fat(&[X86_64, CPU_ARM64]), CPU_X86_64));
+        assert!(runs_on(&fat(&[X86_64, CPU_ARM64]), CPU_ARM64));
+        assert!(runs_on(b"#!/bin/sh", CPU_X86_64), "not Mach-O: nothing to check");
+        let mut cut = fat(&[X86_64, CPU_ARM64]);
+        cut.truncate(20);
+        assert!(!runs_on(&cut, CPU_ARM64), "damaged fails");
+    }
+
+    #[test]
+    fn universal_means_exactly_both() {
+        assert!(universal(&fat(&[X86_64, CPU_ARM64])));
+        assert!(universal(&fat(&[CPU_ARM64, X86_64])));
+        assert!(!universal(&fat(&[CPU_ARM64])));
+        assert!(!universal(&thin64(CPU_ARM64)));
+        assert!(!universal(&fat(&[X86_64, CPU_ARM64, 12])));
+        assert!(!universal(b"#!/bin/sh"));
+        assert_eq!(host_cpu().is_some(), cfg!(any(target_arch = "aarch64", target_arch = "x86_64")));
     }
 
     #[test]

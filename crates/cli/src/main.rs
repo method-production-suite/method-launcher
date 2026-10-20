@@ -155,7 +155,7 @@ fn verify(args: &[String]) -> ExitCode {
     };
     match launcher_sys::install_macos::verify_bundle(app, std::path::Path::new(path)) {
         Ok(()) => {
-            println!("verified: {path} is signed by the suite, notarised and built for Apple silicon only");
+            println!("verified: {path} is signed by the suite, notarised and has code for this Mac's chip");
             ExitCode::SUCCESS
         }
         Err(e) => {
