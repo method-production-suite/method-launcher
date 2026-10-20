@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Lets Method Launcher's password prompt say what it is for (docs/spec.md §4.4). Shipped by
+     the launcher's own .deb with /usr/libexec/method-launcher/install-deb. -->
+<policyconfig>
+  <vendor>Method Production Suite</vendor>
+  <vendor_url>https://methodproduction.com</vendor_url>
+  <action id="com.methodlauncher.desktop.install-deb">
+    <description>Install a Method app's system package</description>
+    <message>Method Launcher needs an administrator's password to install a Method app's system package.</message>
+    <icon_name>method-launcher</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/method-launcher/install-deb</annotate>
+  </action>
+</policyconfig>
