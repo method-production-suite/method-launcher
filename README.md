@@ -25,15 +25,15 @@ whichever system you use.
 
 ## Status
 
-Status: first release, 0.1.0. See [docs/spec.md](docs/spec.md) for what it does and
-[docs/ROADMAP.md](docs/ROADMAP.md) for what comes next.
+See [docs/spec.md](docs/spec.md) for what it does and [docs/ROADMAP.md](docs/ROADMAP.md) for
+what comes next.
 
 | Platform | Built | Signed | Tested |
 | --- | --- | --- | --- |
 | macOS (Apple silicon and Intel) | Installer | Developer ID, notarised | Installs and updates tried with real releases |
-| Windows (x64) | Installer | No | Weekly build and tests |
-| Linux (x86_64) | .deb and AppImage | No | Weekly build and tests |
-| Linux (arm64) | From source | No | Weekly build and tests |
+| Windows (x64) | Installer | No | Built and tested automatically, not yet tested by a person |
+| Linux (x86_64) | .deb and AppImage | No | Built and tested automatically, not yet tested by a person |
+| Linux (arm64) | .deb and AppImage, from 0.2.0 | No | Built and tested automatically, not yet tested by a person. The suite's apps have no Linux ARM builds yet, so the launcher shows them and links how to build them. |
 
 ## Install
 
@@ -46,6 +46,8 @@ Download the launcher for your system from its
 | Windows (x64) | [Method-Launcher-windows-x64-setup.exe](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-windows-x64-setup.exe) |
 | Linux (Debian, Ubuntu) | [Method-Launcher-linux-amd64.deb](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-amd64.deb) |
 | Linux (any x86_64) | [Method-Launcher-linux-x86_64.AppImage](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-x86_64.AppImage) |
+| Linux on ARM (Debian, Ubuntu) | [Method-Launcher-linux-arm64.deb](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-arm64.deb) |
+| Linux on ARM (any) | [Method-Launcher-linux-aarch64.AppImage](https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-linux-aarch64.AppImage) |
 
 On a Mac, open the disk image and drag Method Launcher into Applications. Every release
 lists the files' checksums in `SHA256SUMS`.
