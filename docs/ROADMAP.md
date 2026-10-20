@@ -61,9 +61,12 @@ install that needs the administrator prompt.
 
 1. The Windows and Linux test above.
 2. Done 2026-10-20: the update key's repository secrets are added (the owner's yes, through MOrg).
-3. The weekly build, then a rehearsal on `main`. The rehearsal is the first
-   real run of the update archive and `SHA256SUMS.minisig` signing with the real key, so read
-   its log before the tag.
+3. Done 2026-10-20: the weekly build passed on every system, and the rehearsal on `main`
+   passed. Its Mac download and update archive are universal, notarised and stapled, the
+   archive's signature checks against the app's key (E115E2CD9AEE0DF9), runs under Rosetta,
+   and `latest.json` built from it lists both Mac platforms. `SHA256SUMS.minisig` is signed
+   only in the draft-release job, which a rehearsal skips: its first real run is the tag,
+   and it checks the signature against the app's key before the draft is made.
 4. Then the tag (the owner's yes). Ship it before any app's universal Mac release: launchers
    0.1.0 and 0.1.1 refuse universal app bundles.
 
