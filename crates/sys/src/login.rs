@@ -82,6 +82,14 @@ pub fn enabled() -> bool {
     file().is_some_and(|f| f.is_file())
 }
 
+/// While opening at login is on, points it at the launcher running now (it may have moved, or
+/// a new AppImage may have a new name). Best effort, at launch.
+pub fn refresh() {
+    if enabled() {
+        let _ = set(true);
+    }
+}
+
 /// Turns opening at login on or off.
 pub fn set(on: bool) -> Result<(), String> {
     if cfg!(target_os = "windows") {
