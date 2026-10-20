@@ -7,3 +7,5 @@
 #   then who approved it, when, and for which release; releases may ship it.
 # Remove a line once the version is 14 days old.
 rustls 0.23.46   # security fix for RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0348 and RUSTSEC-2026-0349 (0.23.45 has them), through method-update's ureq; 14 days old on 2026-10-28
+rustls-webpki 0.103.16   # security fix for RUSTSEC-2026-0382 (distrusted intermediates accepted; 0.103.15 has it), through method-update's rustls; 14 days old on 2026-11-03
+webpki-roots 1.0.10   # security fix for RUSTSEC-2026-0381 (distrusted emSign roots; 1.0.9 has it), through method-update's ureq; 14 days old on 2026-11-02
