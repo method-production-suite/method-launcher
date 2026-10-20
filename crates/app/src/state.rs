@@ -154,6 +154,7 @@ pub fn status(app: &App, found: &Found, latest: &Latest, job: &Job) -> Status {
                 Stage::Checking => "Checking the download".to_string(),
                 Stage::Copying => installing_line().to_string(),
                 Stage::Quitting => format!("Waiting for {} to quit", app.name),
+                Stage::Authorizing => "Installing a system package needs an administrator's password".to_string(),
             };
             return Status { busy: true, ..plain(line) };
         }

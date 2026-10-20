@@ -11,7 +11,7 @@ use crate::linux::appimage_path;
 use crate::parse::{desktop_entry, with_installed};
 use crate::{InstallError, Stage, System, env_path};
 use launcher_core::catalog::App;
-use launcher_core::platform::{Folders, Installed, Kind, Launch};
+use launcher_core::platform::{Folders, Installed, Kind, Launch, Locate};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -27,6 +27,7 @@ pub fn install(
     current: Option<&Installed>,
     quit: bool,
     icon_png: Option<&[u8]>,
+    choices: crate::Choices,
     stage: &dyn Fn(Stage),
 ) -> Result<Installed, InstallError> {
     if let Some(current) = current
@@ -37,6 +38,10 @@ pub fn install(
         }
         stage(Stage::Quitting);
         quit_app(app, current)?;
+    }
+    let appimage = appimage_path(app);
+    if crate::deb::use_deb(choices.deb, crate::apt_available(), current.map(|c| c.path.as_path()), appimage.as_deref()) {
+        return install_deb(app, stage);
     }
     // An AppImage runs through FUSE; without it the app would install and not start (spec §8).
     if !fuse_available() {
@@ -75,6 +80,32 @@ pub fn install(
         let _ = std::fs::write(&record, with_installed(&json, app.slug, &version, &dest.to_string_lossy()));
     }
     Ok(Installed { path: dest, version, legacy: false })
+}
+
+/// The system package (spec §4.4): checked against the release's checksum, installed by
+/// `pkexec apt-get install`, which resolves its dependencies and asks for the password, then
+/// confirmed with `dpkg-query`.
+fn install_deb(app: &App, stage: &dyn Fn(Stage)) -> Result<Installed, InstallError> {
+    let fetched = fetch_verified(app, Kind::Deb, true, stage)?;
+    // apt-get installs a local file only by a path ending in `.deb`.
+    let deb = fetched.file.with_extension("deb");
+    std::fs::rename(&fetched.file, &deb).map_err(|e| fail("The download couldn't be prepared.", e.to_string()))?;
+    stage(Stage::Authorizing);
+    let out = Command::new("pkexec")
+        .args(["/usr/bin/apt-get", "install", "-y", "--"])
+        .arg(&deb)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output();
+    let _ = std::fs::remove_file(&deb);
+    let out = out.map_err(|e| fail(format!("{}'s system package couldn't be installed. Nothing was changed.", app.name), e.to_string()))?;
+    crate::deb::result(app, out.status.code(), &String::from_utf8_lossy(&out.stderr))?;
+    stage(Stage::Copying);
+    System
+        .locate(app)
+        .filter(|found| !found.version.is_empty())
+        .ok_or_else(|| fail(format!("{} couldn't be found after its package was installed.", app.name), "dpkg-query doesn't list it"))
 }
 
 /// How to add FUSE, linked from the message when it is missing.

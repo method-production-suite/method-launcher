@@ -39,6 +39,19 @@ app. **Demo the suite** opens every installed app on Field Station, the suite's 
 sample production. An app that is already open is left as it is, with a note to use its own
 Help > Open Sample.
 
+## Settings
+
+Open Settings from its button beside Help, or with ⌘, (Ctrl+, on Windows and Linux).
+
+- **Check for updates automatically:** the same switch as in the Help menu. With it on, the
+  launcher looks for new versions at launch and every 6 hours while it is open.
+- **Install apps in** (Mac): Applications, or your own Applications folder in your home
+  folder, which needs no administrator password. It applies to new installs; an update goes
+  where the app already is.
+- **Install apps as** (Linux with apt): the AppImage in your Applications folder, which needs
+  no password, or the system package (.deb), which asks for an administrator's password and
+  lets apt add what the app needs. An update goes the way the app is installed now.
+
 ## The Help menu
 
 - **About Method Launcher:** the version and the licence.

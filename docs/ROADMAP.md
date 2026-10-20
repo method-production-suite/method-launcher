@@ -122,10 +122,12 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 - **[partial] S** Windows: the setup checked against `SHA256SUMS`, run per user with its own
   window, then confirmed by looking again (spec §4.3). Built and cross-checked, not yet run
   on a Windows machine. Missing: Authenticode, once the suite signs Windows builds.
-- **[partial] M** Linux: the AppImage checked against `SHA256SUMS`, placed in
+- **[have] M** Linux: the AppImage checked against `SHA256SUMS`, placed in
   `~/Applications` through a staging name, with a menu entry and icon, and its version
-  recorded (spec §4.4); the ARM message. Built and cross-checked, not yet run on a Linux
-  machine. Missing: the `.deb` choice through pkexec and apt, and the FUSE help link.
+  recorded (spec §4.4); the ARM message; the FUSE help link; and the `.deb` as a Settings
+  choice where apt is, installed by `pkexec apt-get install` and confirmed with `dpkg-query`
+  (an update goes the way the app is installed). Built and unit-tested, not yet tested by a
+  person: waiting on the owner (Windows/Linux).
 - **[have] S** Every failure case in spec §8, with a test each: offline told apart from
   GitHub not answering, no download for this system, a full disk (checked before copying on
   macOS and Linux), FUSE missing on Linux with its help link, and the release page for a
