@@ -140,14 +140,11 @@ Each one updates itself." Nothing installs on its own.
 
 ### 3.4 Settings
 
-In 0.1.0 the one setting, "Check for updates automatically", is a switch at the foot of the
-window, saved in `settings.json` in the launcher's data folder; the rest of this section
-comes with the Settings window.
-
-Method Launcher > Settings on macOS; File > Settings on Windows and Linux.
+Settings is a window, opened from the Settings button beside Help or with ⌘, (Ctrl+, on
+Windows and Linux), saved in `settings.json` in the launcher's data folder.
 
 - "Check for updates automatically" (on by default, SUITE-STANDARDS.md §1).
-- "Open the launcher when I log in" (off by default).
+- "Open the launcher when I log in" (off by default). Not built yet.
 - macOS: "Install apps in: Applications / my Applications folder" (`/Applications` or
   `~/Applications`).
 - Linux on a system with apt: "Install apps as: AppImage in my Applications folder / system

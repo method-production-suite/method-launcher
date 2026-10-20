@@ -84,6 +84,15 @@ pub enum Stage {
     Quitting,
 }
 
+/// The person's choices about where and how apps are installed (docs/spec.md §3.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Choices {
+    /// macOS: new installs go into `~/Applications` instead of `/Applications`.
+    pub home_applications: bool,
+    /// Linux on a system with apt: install the `.deb` instead of the AppImage.
+    pub deb: bool,
+}
+
 /// Why an install stopped: one plain sentence for the card, and the technical detail.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InstallError {
@@ -109,6 +118,25 @@ impl InstallError {
         self.link = Some((label.into(), url.into()));
         self
     }
+}
+
+/// Where a new install goes on macOS: `/Applications`, or `~/Applications` when Settings says
+/// so (made if it isn't there yet).
+#[cfg(target_os = "macos")]
+pub fn new_install_folder(choices: Choices) -> PathBuf {
+    if choices.home_applications
+        && let Some(home) = env_path("HOME")
+    {
+        let dir = home.join("Applications");
+        let _ = std::fs::create_dir_all(&dir);
+        return dir;
+    }
+    PathBuf::from("/Applications")
+}
+
+/// Whether this system installs packages with apt, so the `.deb` can be offered (spec §3.4).
+pub fn apt_available() -> bool {
+    cfg!(target_os = "linux") && Path::new("/usr/bin/apt-get").is_file()
 }
 
 /// This system's name, as the messages say it.
@@ -151,29 +179,32 @@ impl std::fmt::Display for InstallError {
 impl System {
     /// Installs or updates `app` from its latest release on this system (spec §4): over
     /// `current` when there is one, asking it to quit first when `quit` says the person agreed.
-    /// `icon_png` is the app's mark, for the Linux menu entry.
+    /// `icon_png` is the app's mark, for the Linux menu entry; `choices` are the person's
+    /// Settings.
     pub fn install(
         &self,
         app: &App,
         current: Option<&Installed>,
         quit: bool,
         icon_png: Option<&[u8]>,
+        choices: Choices,
         stage: &dyn Fn(Stage),
     ) -> Result<Installed, InstallError> {
         #[cfg(target_os = "macos")]
         {
             let _ = icon_png;
-            // An update goes where the installed copy is; a new install into /Applications.
-            let dest = current.and_then(|c| c.path.parent().map(PathBuf::from)).unwrap_or_else(|| PathBuf::from("/Applications"));
+            // An update goes where the installed copy is; a new install where Settings says.
+            let dest = current.and_then(|c| c.path.parent().map(PathBuf::from)).unwrap_or_else(|| new_install_folder(choices));
             install_macos::install(app, &dest, current, quit, stage)
         }
         #[cfg(target_os = "windows")]
         {
-            let _ = icon_png;
+            let _ = (icon_png, choices);
             install_windows::install(app, current, quit, stage)
         }
         #[cfg(target_os = "linux")]
         {
+            let _ = choices;
             install_linux::install(app, current, quit, icon_png, stage)
         }
     }

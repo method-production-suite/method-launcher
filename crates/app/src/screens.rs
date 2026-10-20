@@ -23,7 +23,12 @@ fn screens() {
         (egui::Theme::Light, "update-light.png", true),
         (egui::Theme::Dark, "update-dark.png", true),
     ];
-    for (theme, name, behind) in shots.into_iter().chain([(egui::Theme::Light, "demo-light.png", false)]) {
+    let extra = [
+        (egui::Theme::Light, "demo-light.png", false),
+        (egui::Theme::Light, "settings-light.png", false),
+        (egui::Theme::Dark, "help-dark.png", false),
+    ];
+    for (theme, name, behind) in shots.into_iter().chain(extra) {
         let mut harness = Harness::builder()
             .with_size(SIZE)
             .with_pixels_per_point(2.0)
@@ -56,6 +61,12 @@ fn screens() {
             // The note Demo the suite leaves; the button itself is never pressed here, as it
             // would open the apps on this screen.
             harness.state_mut().notice = Some((crate::demo_note(&["Reader", "Budget"], &[], &["Storyteller", "Schedule"], &[]), false));
+        }
+        if name.starts_with("settings") {
+            harness.state_mut().settings_open = true;
+        }
+        if name.starts_with("help") {
+            harness.state_mut().help = Some(crate::help::Window::About);
         }
         harness.run_steps(4);
         let image = harness.render().unwrap();

@@ -63,7 +63,12 @@ pub fn shortcuts() -> Vec<(&'static str, String)> {
     let mac = cfg!(target_os = "macos");
     let names = if mac { &egui::ModifierNames::SYMBOLS } else { &egui::ModifierNames::NAMES };
     let refresh = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R).format(names, mac);
-    vec![("Look again for installed apps and new versions", refresh), ("Close a Help window", "Esc".to_string())]
+    let settings = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma).format(names, mac);
+    vec![
+        ("Look again for installed apps and new versions", refresh),
+        ("Open Settings", settings),
+        ("Close Settings or a Help window", "Esc".to_string()),
+    ]
 }
 
 /// Which Help window is open.
