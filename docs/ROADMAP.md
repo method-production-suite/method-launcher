@@ -76,10 +76,8 @@ test, on the owner's yes). Download the launcher from the latest release
 
 ### Release go-aheads
 
-- **0.2.1: waiting for the owner's yes** (tag and publish). The security fix for the
-  launcher's own updater (RUSTSEC-2026-0382 and -0381, #28) and "Open the launcher when I
-  log in" (#27). Rehearsed green on 3a6dc36 (run 39484985446), all five builds.
-- 0.2.0: published 2026-10-20. 0.1.2: published 2026-10-20.
+- None waiting. 0.2.1 published 2026-10-21 (the updater's TLS security fix and open at
+  login); 0.2.0 and 0.1.2 published 2026-10-20.
 
 ---
 
@@ -192,10 +190,10 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 ## Next
 
-- **[missing] S** A clearer password prompt for the Linux `.deb`: the system now names
-  `/bin/sh` as asking. A polkit action file (shipped by the launcher's own `.deb`) can say
-  "Method Launcher wants to install Method Budget". The AppImage launcher keeps the plain
-  prompt. (MReview's idea, 2026-10-20.)
+- **[have] S** A clearer password prompt for the Linux `.deb`: the launcher's own `.deb`
+  ships the install step as `/usr/libexec/method-launcher/install-deb` with a polkit action
+  that says what the password is for. The AppImage launcher runs the same step through
+  `sh -c`, with the plain prompt. (MReview's idea, 2026-10-20.)
 - **[missing] S** Windows code signing: the release workflow's signtool step is ready and
   off. It needs a code-signing certificate, the owner's call (cost and who holds it), after
   which the launcher can also check Authenticode on each app's setup.

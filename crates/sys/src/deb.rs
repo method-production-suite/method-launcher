@@ -31,13 +31,20 @@ printf '%s  %s
 /usr/bin/apt-get install -y -- "$dir/package.deb"
 "#;
 
-/// The arguments for `pkexec` that run [`INSTALL`] on `download`, which must match `sha256`.
-/// `None` when the hash isn't one (64 hex digits), so nothing unchecked ever reaches root.
-pub fn pkexec_args(download: &Path, sha256: &str) -> Option<Vec<std::ffi::OsString>> {
+/// The same step installed by the launcher's own `.deb` (packaging/linux/install-deb), root's
+/// file, with a polkit action that names it, so the password prompt says what it is for.
+pub const HELPER: &str = "/usr/libexec/method-launcher/install-deb";
+
+/// The arguments for `pkexec` that run [`INSTALL`] on `download`, which must match `sha256`:
+/// through [`HELPER`] when the launcher was installed as a package (`helper` says so), else
+/// through `/bin/sh -c`. `None` when the hash isn't one (64 hex digits), so nothing unchecked
+/// ever reaches root.
+pub fn pkexec_args(download: &Path, sha256: &str, helper: bool) -> Option<Vec<std::ffi::OsString>> {
     if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    Some(vec!["/bin/sh".into(), "-c".into(), INSTALL.into(), "sh".into(), download.as_os_str().to_owned(), sha256.to_ascii_lowercase().into()])
+    let (file, sha) = (download.as_os_str().to_owned(), sha256.to_ascii_lowercase().into());
+    Some(if helper { vec![HELPER.into(), file, sha] } else { vec!["/bin/sh".into(), "-c".into(), INSTALL.into(), "sh".into(), file, sha] })
 }
 
 /// What the privileged step exiting with `code` means (spec §8): 126 and 127 are pkexec's own,
@@ -93,7 +100,7 @@ mod tests {
     #[test]
     fn root_checks_its_own_copy_before_apt_installs_it() {
         let sha = "a".repeat(64);
-        let args = pkexec_args(Path::new("/home/you/.cache/x/budget.deb"), &sha).unwrap();
+        let args = pkexec_args(Path::new("/home/you/.cache/x/budget.deb"), &sha, false).unwrap();
         assert_eq!(args[0], "/bin/sh");
         assert_eq!(args[1], "-c");
         assert_eq!(args[2], INSTALL);
@@ -107,8 +114,22 @@ mod tests {
         assert!(INSTALL.contains(r#"apt-get install -y -- "$dir/package.deb""#), "apt installs the checked copy");
         assert!(!INSTALL.contains(r#"apt-get install -y -- "$1""#), "never the person's own file");
         // Nothing reaches root without a real hash.
-        assert!(pkexec_args(Path::new("/x.deb"), "abc").is_none());
-        assert!(pkexec_args(Path::new("/x.deb"), &format!("{}; rm -rf /", "a".repeat(52))).is_none());
+        assert!(pkexec_args(Path::new("/x.deb"), "abc", false).is_none());
+        assert!(pkexec_args(Path::new("/x.deb"), &format!("{}; rm -rf /", "a".repeat(52)), true).is_none());
+    }
+
+    #[test]
+    fn the_packaged_helper_is_the_same_step() {
+        let sha = "b".repeat(64);
+        let args = pkexec_args(Path::new("/tmp/budget.deb"), &sha, true).unwrap();
+        assert_eq!(args, vec![std::ffi::OsString::from(HELPER), "/tmp/budget.deb".into(), sha.into()]);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/linux");
+        let helper = std::fs::read_to_string(root.join("install-deb")).unwrap();
+        assert!(helper.starts_with("#!/bin/sh\n"));
+        assert!(helper.ends_with(INSTALL), "packaging/linux/install-deb must end with INSTALL, unchanged");
+        let policy = std::fs::read_to_string(root.join("com.methodlauncher.desktop.install-deb.policy")).unwrap();
+        assert!(policy.contains(&format!(r#"<annotate key="org.freedesktop.policykit.exec.path">{HELPER}</annotate>"#)));
+        assert!(policy.contains("<allow_active>auth_admin</allow_active>"), "always a password, never kept");
     }
 
     /// The script itself, run unprivileged where `sh`, `mktemp`, `cp` and `sha256sum` are, with

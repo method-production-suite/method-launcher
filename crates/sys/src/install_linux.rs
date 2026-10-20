@@ -13,7 +13,7 @@ use crate::{InstallError, Stage, System, env_path};
 use launcher_core::catalog::App;
 use launcher_core::platform::{Folders, Installed, Kind, Launch, Locate};
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -91,7 +91,7 @@ fn install_deb(app: &App, stage: &dyn Fn(Stage)) -> Result<Installed, InstallErr
     let args = fetched
         .sha256
         .as_deref()
-        .and_then(|sha| crate::deb::pkexec_args(&fetched.file, sha))
+        .and_then(|sha| crate::deb::pkexec_args(&fetched.file, sha, Path::new(crate::deb::HELPER).is_file()))
         .ok_or_else(|| fail("This release can't be checked yet, so it can't be installed from here.", "no SHA-256 for the .deb"))?;
     stage(Stage::Authorizing);
     let out = Command::new("pkexec").args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).output();

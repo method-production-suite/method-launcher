@@ -330,6 +330,13 @@ pub fn package_linux(options: &Options) -> Result<(), String> {
     let deb_root = out.join("deb");
     fresh_dir(&deb_root)?;
     linux_tree(&deb_root, &binary)?;
+    // The package alone carries the install step as root's file, with the polkit action that
+    // names it (an AppImage launcher runs the same step through `sh -c`).
+    let helper = deb_root.join("usr/libexec/method-launcher/install-deb");
+    copy(&packaging("linux/install-deb"), &helper)?;
+    set_mode(&helper, 0o755)?;
+    let policy = "com.methodlauncher.desktop.install-deb.policy";
+    copy(&packaging(&format!("linux/{policy}")), &deb_root.join("usr/share/polkit-1/actions").join(policy))?;
     let installed_kib = tree_size(&deb_root)?.div_ceil(1024);
     write(&deb_root.join("DEBIAN/control"), &deb_control(&version, deb_arch, installed_kib))?;
     let deb = out.join(deb_name);
