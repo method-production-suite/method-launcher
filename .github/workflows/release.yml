@@ -6,6 +6,8 @@
 #
 #   Method-Launcher-macOS.dmg               Method-Launcher-linux-amd64.deb
 #   Method-Launcher-windows-x64-setup.exe   Method-Launcher-linux-x86_64.AppImage
+#                                           Method-Launcher-linux-arm64.deb
+#                                           Method-Launcher-linux-aarch64.AppImage
 #
 # The packaging itself is xtask's `bundle-macos`, `dmg-macos`, `package-windows` and
 # `package-linux` (xtask/src/package.rs), which also run on a developer's machine. Here the
@@ -166,6 +168,17 @@ jobs:
           # The oldest supported Ubuntu keeps the packages' glibc requirement low.
           - name: linux-x64
             os: ubuntu-22.04
+            deb_arch: amd64
+            appimage_arch: x86_64
+            appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          # Linux on ARM (decision 5): GitHub's arm runner, free for a public repository.
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            deb_arch: arm64
+            appimage_arch: aarch64
+            appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -174,11 +187,14 @@ jobs:
       HAS_NOTARY_KEY: ${{ secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' && secrets.AC_API_KEY_P8_BASE64 != '' }}
       HAS_WIN_SIGNING: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-      # appimagetool 1.9.1 and the type 2 runtime 20251108 (AppImage project releases).
-      APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-      APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-      APPIMAGE_RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
-      APPIMAGE_RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+      # appimagetool 1.9.1 and the type 2 runtime 20251108 (AppImage project releases), for
+      # the runner's chip; the SHA-256s are the ones GitHub publishes for those assets.
+      APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${{ matrix.appimage_arch }}.AppImage
+      APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+      APPIMAGE_RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${{ matrix.appimage_arch }}
+      APPIMAGE_RUNTIME_SHA256: ${{ matrix.runtime_sha256 }}
+      DEB_ARCH: ${{ matrix.deb_arch }}
+      APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
     defaults:
       run:
         shell: bash
@@ -412,8 +428,15 @@ jobs:
           printf '%s  %s\n' "$APPIMAGETOOL_SHA256" "$tools/appimagetool" "$APPIMAGE_RUNTIME_SHA256" "$tools/runtime" | sha256sum --check --strict
           chmod +x "$tools/appimagetool"
           target/debug/xtask package-linux --no-build --appimagetool "$tools/appimagetool" --runtime "$tools/runtime"
-          dpkg-deb --info target/bundle/linux/Method-Launcher-linux-amd64.deb
-          dpkg-deb --contents target/bundle/linux/Method-Launcher-linux-amd64.deb
+          deb="target/bundle/linux/Method-Launcher-linux-$DEB_ARCH.deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb"
+          # Built for this runner's chip, never another's.
+          if [ "$(dpkg-deb --field "$deb" Architecture)" != "$DEB_ARCH" ]; then
+            echo "::error::$deb is not built for $DEB_ARCH."
+            exit 1
+          fi
+          file "target/bundle/linux/Method-Launcher-linux-$APPIMAGE_ARCH.AppImage" target/release/method-launcher-app
 
       - name: Collect the installers
         run: |
@@ -427,7 +450,7 @@ jobs:
               ;;
             Windows) cp target/bundle/windows/Method-Launcher-windows-x64-setup.exe dist/ ;;
             Linux)
-              cp target/bundle/linux/Method-Launcher-linux-amd64.deb target/bundle/linux/Method-Launcher-linux-x86_64.AppImage dist/
+              cp "target/bundle/linux/Method-Launcher-linux-$DEB_ARCH.deb" "target/bundle/linux/Method-Launcher-linux-$APPIMAGE_ARCH.AppImage" dist/
               ;;
           esac
           ls -l dist
@@ -484,7 +507,8 @@ jobs:
         run: |
           set -euo pipefail
           for f in Method-Launcher-macOS.dmg Method-Launcher-windows-x64-setup.exe \
-                   Method-Launcher-linux-amd64.deb Method-Launcher-linux-x86_64.AppImage; do
+                   Method-Launcher-linux-amd64.deb Method-Launcher-linux-x86_64.AppImage \
+                   Method-Launcher-linux-arm64.deb Method-Launcher-linux-aarch64.AppImage; do
             if [ ! -s "dist/$f" ]; then echo "::error::dist/$f is missing."; exit 1; fi
           done
           # The update manifest, when the Mac build brought the signed updater archive. It is

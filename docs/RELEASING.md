@@ -15,6 +15,8 @@ anything is signed, then makes a DRAFT release with:
 | `Method-Launcher-windows-x64-setup.exe` | Windows x64 installer (unsigned until the suite has a certificate) |
 | `Method-Launcher-linux-amd64.deb` | Debian and Ubuntu |
 | `Method-Launcher-linux-x86_64.AppImage` | any x86_64 Linux |
+| `Method-Launcher-linux-arm64.deb` | Debian and Ubuntu on ARM (from 0.2.0) |
+| `Method-Launcher-linux-aarch64.AppImage` | any Linux on ARM (from 0.2.0) |
 | `SHA256SUMS` | every file above |
 | `SHA256SUMS.minisig` | `SHA256SUMS`, signed with the update key |
 | `Method-Launcher_<version>_universal.app.tar.gz`, `.sig`, `latest.json` | the self-update for installed launchers on every Mac (`darwin-aarch64` and `darwin-x86_64`) |

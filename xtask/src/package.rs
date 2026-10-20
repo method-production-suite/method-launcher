@@ -17,8 +17,15 @@ const LINUX_NAME: &str = "method-launcher";
 const DESKTOP_FILE: &str = "com.methodlauncher.desktop.desktop";
 
 pub const DMG: &str = "Method-Launcher-macOS.dmg";
-pub const DEB: &str = "Method-Launcher-linux-amd64.deb";
-pub const APPIMAGE: &str = "Method-Launcher-linux-x86_64.AppImage";
+/// The Linux packages' names for one chip: Debian's name for it, and the AppImage's.
+pub fn linux_names(deb_arch: &str, appimage_arch: &str) -> (String, String) {
+    (format!("Method-Launcher-linux-{deb_arch}.deb"), format!("Method-Launcher-linux-{appimage_arch}.AppImage"))
+}
+
+/// This machine's chip as Debian and AppImage name it (the Linux packages build for the host).
+fn linux_arch() -> (&'static str, &'static str) {
+    if cfg!(target_arch = "aarch64") { ("arm64", "aarch64") } else { ("amd64", "x86_64") }
+}
 pub const SETUP_EXE: &str = "Method-Launcher-windows-x64-setup.exe";
 
 /// Options shared by the packaging tasks: `--target <triple>`, `--sign <identity>`,
@@ -254,11 +261,11 @@ pub fn dmg_macos(options: &Options) -> Result<(), String> {
 /// The Debian package's control file. The libraries are the ones eframe loads at run time
 /// (OpenGL, xkbcommon, X11 and Wayland); the binary itself links only libc and libgcc. The
 /// launcher fetches releases with the system's curl.
-fn deb_control(version: &str, installed_kib: u64) -> String {
+fn deb_control(version: &str, arch: &str, installed_kib: u64) -> String {
     format!(
         "Package: {LINUX_NAME}\n\
          Version: {}\n\
-         Architecture: amd64\n\
+         Architecture: {arch}\n\
          Maintainer: Method Production Suite <hello@methodproduction.com>\n\
          Installed-Size: {installed_kib}\n\
          Depends: libc6 (>= 2.35), libgcc-s1, libgl1, libegl1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxi6, libxrandr2, libwayland-client0, libwayland-cursor0, libwayland-egl1, curl, xdg-utils\n\
@@ -315,6 +322,8 @@ pub fn package_linux(options: &Options) -> Result<(), String> {
     }
     let version = workspace_version()?;
     let binary = build_app(options)?;
+    let (deb_arch, appimage_arch) = linux_arch();
+    let (deb_name, appimage_name) = linux_names(deb_arch, appimage_arch);
     let out = bundle_dir("linux");
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
 
@@ -322,8 +331,8 @@ pub fn package_linux(options: &Options) -> Result<(), String> {
     fresh_dir(&deb_root)?;
     linux_tree(&deb_root, &binary)?;
     let installed_kib = tree_size(&deb_root)?.div_ceil(1024);
-    write(&deb_root.join("DEBIAN/control"), &deb_control(&version, installed_kib))?;
-    let deb = out.join(DEB);
+    write(&deb_root.join("DEBIAN/control"), &deb_control(&version, deb_arch, installed_kib))?;
+    let deb = out.join(deb_name);
     run("dpkg-deb", &[os("--root-owner-group"), os("--build"), deb_root.as_os_str(), deb.as_os_str()])?;
     println!("package-linux: {}", deb.display());
 
@@ -340,10 +349,16 @@ pub fn package_linux(options: &Options) -> Result<(), String> {
     copy(&packaging(&format!("linux/{DESKTOP_FILE}")), &app_dir.join(DESKTOP_FILE))?;
     copy(&packaging("icons/icon-256.png"), &app_dir.join(format!("{LINUX_NAME}.png")))?;
     copy(&packaging("icons/icon-256.png"), &app_dir.join(".DirIcon"))?;
-    let appimage = out.join(APPIMAGE);
-    println!("$ ARCH=x86_64 {} --no-appstream --runtime-file {} {} {}", tool.display(), runtime.display(), app_dir.display(), appimage.display());
+    let appimage = out.join(appimage_name);
+    println!(
+        "$ ARCH={appimage_arch} {} --no-appstream --runtime-file {} {} {}",
+        tool.display(),
+        runtime.display(),
+        app_dir.display(),
+        appimage.display()
+    );
     let status = Command::new(tool)
-        .env("ARCH", "x86_64")
+        .env("ARCH", appimage_arch)
         // Runs without FUSE (build machines rarely have it).
         .env("APPIMAGE_EXTRACT_AND_RUN", "1")
         .args([os("--no-appstream"), os("--runtime-file"), runtime.as_os_str(), app_dir.as_os_str(), appimage.as_os_str()])
@@ -425,13 +440,26 @@ mod tests {
 
     #[test]
     fn deb_control_is_well_formed() {
-        let control = deb_control("0.2.0-beta.1", 12345);
+        let control = deb_control("0.2.0-beta.1", "arm64", 12345);
         assert!(control.contains("Version: 0.2.0~beta.1\n"));
+        assert!(control.contains("Architecture: arm64\n"));
         assert!(control.contains("Installed-Size: 12345\n"));
         assert!(control.ends_with('\n'));
         // Every continuation line of the description starts with one space.
         let description = control.split("Description: ").nth(1).unwrap_or_default();
         assert!(description.lines().skip(1).all(|l| l.starts_with(' ') && !l.starts_with("  ")));
+    }
+
+    #[test]
+    fn linux_packages_are_named_for_their_chip() {
+        assert_eq!(
+            linux_names("amd64", "x86_64"),
+            ("Method-Launcher-linux-amd64.deb".to_string(), "Method-Launcher-linux-x86_64.AppImage".to_string())
+        );
+        assert_eq!(
+            linux_names("arm64", "aarch64"),
+            ("Method-Launcher-linux-arm64.deb".to_string(), "Method-Launcher-linux-aarch64.AppImage".to_string())
+        );
     }
 
     #[test]
