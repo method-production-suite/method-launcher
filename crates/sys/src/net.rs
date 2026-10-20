@@ -19,6 +19,8 @@ pub const LARGE: u64 = 1 << 30;
 /// Why a request failed, in words a person can be shown.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NetError {
+    /// No network: the name couldn't be looked up.
+    Offline(String),
     /// curl couldn't connect, or timed out.
     Unreachable(String),
     /// The server answered 404.
@@ -29,6 +31,8 @@ pub enum NetError {
     Redirected(String),
     /// Over the size limit, or the download stalled.
     Stopped(String),
+    /// The disk is full.
+    NoSpace(String),
     /// curl isn't there, or a local file couldn't be written.
     Local(String),
 }
@@ -36,11 +40,13 @@ pub enum NetError {
 impl std::fmt::Display for NetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NetError::Unreachable(e) => write!(f, "GitHub didn't answer. Check the connection and try again. ({e})"),
+            NetError::Offline(e) => write!(f, "You're offline. Connect to the internet and try again. ({e})"),
+            NetError::Unreachable(e) => write!(f, "GitHub didn't answer. Try again in a few minutes. ({e})"),
             NetError::NotFound => write!(f, "The release has no such file."),
             NetError::Status(code) => write!(f, "GitHub answered {code}. Try again in a few minutes."),
             NetError::Redirected(url) => write!(f, "The download came from somewhere unexpected, so it was stopped. ({url})"),
             NetError::Stopped(e) => write!(f, "The download stopped. Try again. ({e})"),
+            NetError::NoSpace(e) => write!(f, "There isn't enough free space for the download. ({e})"),
             NetError::Local(e) => write!(f, "{e}"),
         }
     }
@@ -71,18 +77,37 @@ fn once(url: &str, dest: &Path, max: u64) -> Result<(u16, String), NetError> {
     crate::quiet(&mut command);
     let out = command.output().map_err(|e| NetError::Local(format!("curl couldn't run: {e}")))?;
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-    match out.status.code() {
-        Some(0) => {}
-        // 63: over --max-filesize; 28: timed out or too slow; 23: couldn't write.
-        Some(63) => return Err(NetError::Stopped("the file is larger than the launcher allows".into())),
-        Some(28) => return Err(NetError::Stopped(stderr)),
-        Some(23) => return Err(NetError::Local(format!("The download couldn't be saved. {stderr}"))),
-        _ => return Err(NetError::Unreachable(stderr)),
+    if let Some(e) = curl_failure(out.status.code(), &stderr) {
+        return Err(e);
     }
     let written = String::from_utf8_lossy(&out.stdout).into_owned();
     let (code, redirect) = written.split_once(' ').unwrap_or((written.as_str(), ""));
     let code = code.trim().parse().map_err(|_| NetError::Unreachable(format!("unexpected answer {written:?}")))?;
     Ok((code, redirect.trim().to_string()))
+}
+
+/// What curl's exit code means, or `None` when it succeeded (spec §8). 6: the name couldn't be
+/// looked up, which is how being offline shows; 7: no connection; 63: over --max-filesize;
+/// 28: timed out or too slow (a stall at the connection is GitHub not answering); 23: couldn't
+/// write, which is usually a full disk.
+pub fn curl_failure(code: Option<i32>, stderr: &str) -> Option<NetError> {
+    let detail = stderr.to_string();
+    match code {
+        Some(0) => None,
+        Some(6) => Some(NetError::Offline(detail)),
+        Some(63) => Some(NetError::Stopped("the file is larger than the launcher allows".into())),
+        Some(28) if stderr.contains("onnect") => Some(NetError::Unreachable(detail)),
+        Some(28) => Some(NetError::Stopped(detail)),
+        Some(23) if is_disk_full(stderr) => Some(NetError::NoSpace(detail)),
+        Some(23) => Some(NetError::Local(format!("The download couldn't be saved. {stderr}"))),
+        _ => Some(NetError::Unreachable(detail)),
+    }
+}
+
+/// Whether an error's text says the disk is full, on any system.
+pub fn is_disk_full(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    text.contains("no space left") || text.contains("not enough space") || text.contains("disk full") || text.contains("disk quota")
 }
 
 /// The redirect a URL answers with, without following it (`releases/latest` names its tag
@@ -126,4 +151,29 @@ pub fn fetch_text(url: &str, scratch: &Path) -> Result<String, NetError> {
     let result = download(url, scratch, SMALL).and_then(|()| std::fs::read_to_string(scratch).map_err(|e| NetError::Local(e.to_string())));
     let _ = std::fs::remove_file(scratch);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_curl_s_failures_as_spec_8_says() {
+        assert_eq!(curl_failure(Some(0), ""), None);
+        assert!(matches!(curl_failure(Some(6), "Could not resolve host: github.com"), Some(NetError::Offline(_))));
+        assert!(matches!(curl_failure(Some(7), "Failed to connect"), Some(NetError::Unreachable(_))));
+        assert!(matches!(curl_failure(Some(28), "Connection timed out after 20001 milliseconds"), Some(NetError::Unreachable(_))));
+        assert!(matches!(curl_failure(Some(28), "Operation too slow"), Some(NetError::Stopped(_))));
+        assert!(matches!(curl_failure(Some(63), ""), Some(NetError::Stopped(_))));
+        assert!(matches!(curl_failure(Some(23), "Failure writing output: No space left on device"), Some(NetError::NoSpace(_))));
+        assert!(matches!(curl_failure(Some(23), "Failure writing output"), Some(NetError::Local(_))));
+        assert!(matches!(curl_failure(None, "killed"), Some(NetError::Unreachable(_))));
+    }
+
+    #[test]
+    fn knows_a_full_disk_on_every_system() {
+        assert!(is_disk_full("No space left on device (os error 28)"));
+        assert!(is_disk_full("There is not enough space on the disk. (os error 112)"));
+        assert!(!is_disk_full("Permission denied"));
+    }
 }

@@ -218,12 +218,23 @@ fn verify_and_copy(app: &App, mount: &Path, dest_dir: &Path, current: Option<&In
     let old = [Some(dest.clone()), current.map(|c| c.path.clone())].into_iter().flatten().find(|p| p.exists());
     let old_elsewhere = current.map(|c| c.path.clone()).filter(|p| *p != dest && p.exists());
 
+    // Room for the new copy beside the old one until the swap (spec §8).
+    let needed = folder_size(&source);
+    if let Some(free) = crate::free_space(dest_dir)
+        && free < needed + needed / 10
+    {
+        return Err(crate::no_space(app, Some(needed), format!("{} free in {}", crate::megabytes(free), dest_dir.display())));
+    }
     let direct = std::fs::create_dir(&staging).and_then(|()| std::fs::remove_dir(&staging)).is_ok();
     if direct {
         let copied = tool(DITTO, &[&source.to_string_lossy(), &staging.to_string_lossy()]);
         if !matches!(copied, Ok((true, _))) {
             let _ = std::fs::remove_dir_all(&staging);
-            return Err(fail(format!("{} couldn't be copied. Nothing was changed.", app.name), format!("{copied:?}")));
+            let details = format!("{copied:?}");
+            if crate::net::is_disk_full(&details) {
+                return Err(crate::no_space(app, Some(needed), details));
+            }
+            return Err(fail(format!("{} couldn't be copied. Nothing was changed.", app.name), details));
         }
         if let Err(e) = verify_bundle(app, &staging) {
             let _ = std::fs::remove_dir_all(&staging);
@@ -313,17 +324,26 @@ fn applescript_escape(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Leftovers from an install the launcher was quit in the middle of: staging and set-aside
-/// copies in the Applications folders, partial downloads, and its own mounts. Only what is
-/// more than an hour old, so a check or an install running now is never touched.
+/// The bytes of every file in `dir`, links not followed.
+fn folder_size(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(entry.path()),
+                Ok(t) if t.is_file() => total += entry.metadata().map(|m| m.len()).unwrap_or(0),
+                _ => {}
+            }
+        }
+    }
+    total
+}
+
+/// macOS's leftovers (spec §4.5): staging and set-aside copies in the Applications folders,
+/// and the launcher's own mounts, when more than an hour old.
 pub fn clean_up(dirs: &[PathBuf]) {
-    let stale = |path: &Path| {
-        std::fs::symlink_metadata(path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > Duration::from_secs(3600))
-    };
+    let stale = crate::stale;
     for dir in dirs {
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -334,11 +354,6 @@ pub fn clean_up(dirs: &[PathBuf]) {
         }
     }
     let Some(cache) = System.cache() else { return };
-    for entry in std::fs::read_dir(cache.join("downloads")).into_iter().flatten().flatten() {
-        if stale(&entry.path()) {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
     for entry in std::fs::read_dir(cache.join("mounts")).into_iter().flatten().flatten() {
         if stale(&entry.path()) {
             let _ = tool(HDIUTIL, &["detach", &entry.path().to_string_lossy(), "-force", "-quiet"]);
@@ -356,6 +371,16 @@ mod tests {
         assert_eq!(shell_quote("/Applications/Method Budget.app"), "'/Applications/Method Budget.app'");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
         assert_eq!(applescript_escape(r#"say "hi" \ bye"#), r#"say \"hi\" \\ bye"#);
+    }
+
+    #[test]
+    fn counts_a_folder_s_bytes() {
+        let dir = std::env::temp_dir().join(format!("launcher-size-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("Contents/MacOS")).unwrap();
+        std::fs::write(dir.join("Contents/Info.plist"), [0u8; 100]).unwrap();
+        std::fs::write(dir.join("Contents/MacOS/app"), [0u8; 1000]).unwrap();
+        assert_eq!(folder_size(&dir), 1100);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

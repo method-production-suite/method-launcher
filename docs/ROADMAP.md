@@ -125,8 +125,10 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   `~/Applications` through a staging name, with a menu entry and icon, and its version
   recorded (spec §4.4); the ARM message. Built and cross-checked, not yet run on a Linux
   machine. Missing: the `.deb` choice through pkexec and apt, and the FUSE help link.
-- **[missing] S** Every failure case in spec §8, with a test each; leftover cleanup at
-  launch.
+- **[have] S** Every failure case in spec §8, with a test each: offline told apart from
+  GitHub not answering, no download for this system, a full disk (checked before copying on
+  macOS and Linux), FUSE missing on Linux with its help link, and the release page for a
+  release that can't be checked. Leftovers are cleaned up at launch on every system.
 - **[have] S** `method-launcher verify <app> <path>` (macOS), `install <app>` (every system;
   `--to <folder>` on macOS), `latest` and `catalog`.
 

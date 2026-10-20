@@ -170,6 +170,20 @@ pub fn with_installed(json: &str, slug: &str, version: &str, path: &str) -> Stri
     format!("{value:#}\n")
 }
 
+/// The free bytes `df -Pk` reports for the one folder it was asked about: the fourth column of
+/// its second line, in kilobytes.
+pub fn df_available(text: &str) -> Option<u64> {
+    let line = text.lines().nth(1)?;
+    let kb: u64 = line.split_whitespace().nth(3)?.parse().ok()?;
+    kb.checked_mul(1024)
+}
+
+/// Whether one of `tools` is in one of the PATH's folders: an AppImage needs `fusermount` (or
+/// `fusermount3`) to run.
+pub fn on_path(path: &std::ffi::OsStr, tools: &[&str], exists: impl Fn(&std::path::Path) -> bool) -> bool {
+    std::env::split_paths(path).any(|dir| tools.iter().any(|tool| exists(&dir.join(tool))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +289,22 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Meth
         assert_eq!(bundle_matches("org.example.screepub", "com.methodreader.desktop", Some(".screepub")), Some(true));
         assert_eq!(bundle_matches("org.example.other", "com.methodreader.desktop", Some(".screepub")), None);
         assert_eq!(bundle_matches("org.example.screepub", "com.methodbudget.desktop", None), None);
+    }
+
+    #[test]
+    fn reads_the_free_space_df_reports() {
+        let mac = "Filesystem 1024-blocks      Used Available Capacity  Mounted on\n/dev/disk3s5 971350180 512345678 412345678    56%    /System/Volumes/Data\n";
+        assert_eq!(df_available(mac), Some(412_345_678 * 1024));
+        let linux = "Filesystem     1024-blocks     Used Available Capacity Mounted on\n/dev/nvme0n1p2   491134208 98765432 367345678      22% /\n";
+        assert_eq!(df_available(linux), Some(367_345_678 * 1024));
+        assert_eq!(df_available("df: /nowhere: No such file or directory\n"), None);
+    }
+
+    #[test]
+    fn finds_fusermount_on_the_path() {
+        let path = std::env::join_paths(["/usr/local/bin", "/usr/bin"]).expect("path");
+        let present = |p: &std::path::Path| p == std::path::Path::new("/usr/bin/fusermount3");
+        assert!(on_path(&path, &["fusermount", "fusermount3"], present));
+        assert!(!on_path(&path, &["fusermount", "fusermount3"], |_| false));
     }
 }

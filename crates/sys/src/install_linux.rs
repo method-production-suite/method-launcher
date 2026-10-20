@@ -38,17 +38,31 @@ pub fn install(
         stage(Stage::Quitting);
         quit_app(app, current)?;
     }
+    // An AppImage runs through FUSE; without it the app would install and not start (spec §8).
+    if !fuse_available() {
+        return Err(fail(format!("{} needs FUSE to run on this system.", app.name), "neither fusermount nor fusermount3 is on the PATH")
+            .with_link("How to add FUSE", FUSE_HELP));
+    }
     let fetched = fetch_verified(app, Kind::AppImage, true, stage)?;
     stage(Stage::Copying);
     let dest = appimage_path(app).ok_or_else(|| fail("Your home folder couldn't be found.", "HOME is not set"))?;
     let dir = dest.parent().map(PathBuf::from).unwrap_or_default();
     std::fs::create_dir_all(&dir).map_err(|e| fail(format!("{} couldn't be installed. Nothing was changed.", app.name), e.to_string()))?;
+    let needed = std::fs::metadata(&fetched.file).map(|m| m.len()).unwrap_or(0);
+    if let Some(free) = crate::free_space(&dir)
+        && free < needed + needed / 10
+    {
+        return Err(crate::no_space(app, Some(needed), format!("{} free in {}", crate::megabytes(free), dir.display())));
+    }
     let staging = dir.join(format!(".Method-{}.AppImage.installing-{}", app.noun(), std::process::id()));
     let placed = std::fs::copy(&fetched.file, &staging)
         .and_then(|_| std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755)))
         .and_then(|()| std::fs::rename(&staging, &dest));
     if let Err(e) = placed {
         let _ = std::fs::remove_file(&staging);
+        if e.kind() == std::io::ErrorKind::StorageFull {
+            return Err(crate::no_space(app, Some(needed), e.to_string()));
+        }
         return Err(fail(format!("{} couldn't be installed. Nothing was changed.", app.name), e.to_string()));
     }
     menu_entry(app, &dest, icon_png);
@@ -61,6 +75,26 @@ pub fn install(
         let _ = std::fs::write(&record, with_installed(&json, app.slug, &version, &dest.to_string_lossy()));
     }
     Ok(Installed { path: dest, version, legacy: false })
+}
+
+/// How to add FUSE, linked from the message when it is missing.
+pub const FUSE_HELP: &str = "https://docs.appimage.org/user-guide/troubleshooting/fuse.html";
+
+/// Whether this system has what an AppImage needs to start.
+fn fuse_available() -> bool {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    crate::parse::on_path(&path, &["fusermount", "fusermount3"], |p| p.is_file())
+}
+
+/// Linux's leftovers (spec §4.5): staging copies in `~/Applications` more than an hour old.
+pub fn clean_up() {
+    let Some(dir) = env_path("HOME").map(|h| h.join("Applications")) else { return };
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with(".Method-") && name.contains(".AppImage.installing-") && crate::stale(&entry.path()) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// The app's menu entry and icon, so it opens like any other app. Best effort: the AppImage
