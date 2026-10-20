@@ -60,7 +60,7 @@ install that needs the administrator prompt.
 **0.1.2** (release PR #15, merged). In order, before asking for the tag:
 
 1. The Windows and Linux test above.
-2. The key's repository secrets added (the owner's yes, through MOrg).
+2. Done 2026-10-20: the update key's repository secrets are added (the owner's yes, through MOrg).
 3. The weekly build, then a rehearsal on `main`. The rehearsal is the first
    real run of the update archive and `SHA256SUMS.minisig` signing with the real key, so read
    its log before the tag.
