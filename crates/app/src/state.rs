@@ -249,6 +249,12 @@ pub fn primary_label(app: &App, primary: &Primary) -> String {
     }
 }
 
+/// Whether a card's install can still be cancelled: waiting its turn, or finding, downloading
+/// or checking. Once it is quitting the app or copying, it finishes.
+pub fn cancellable(job: &Job) -> bool {
+    matches!(job, Job::Waiting | Job::Running(Stage::Finding | Stage::Downloading(_) | Stage::Checking))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,5 +364,16 @@ mod tests {
         let budget = by_slug("budget").unwrap();
         let s = status(budget, &installed("0.5.0", false), &Latest::Failed("offline".into()), &Job::Idle);
         assert_eq!(s.detail.as_deref(), Some("Couldn't check for updates."));
+    }
+
+    #[test]
+    fn an_install_can_be_cancelled_until_it_copies() {
+        assert!(cancellable(&Job::Waiting));
+        assert!(cancellable(&Job::Running(Stage::Finding)));
+        assert!(cancellable(&Job::Running(Stage::Downloading(1))));
+        assert!(cancellable(&Job::Running(Stage::Checking)));
+        assert!(!cancellable(&Job::Running(Stage::Copying)));
+        assert!(!cancellable(&Job::Running(Stage::Quitting)));
+        assert!(!cancellable(&Job::Idle));
     }
 }

@@ -33,6 +33,8 @@ pub enum NetError {
     Stopped(String),
     /// The disk is full.
     NoSpace(String),
+    /// The person cancelled it.
+    Cancelled,
     /// curl isn't there, or a local file couldn't be written.
     Local(String),
 }
@@ -47,6 +49,7 @@ impl std::fmt::Display for NetError {
             NetError::Redirected(url) => write!(f, "The download came from somewhere unexpected, so it was stopped. ({url})"),
             NetError::Stopped(e) => write!(f, "The download stopped. Try again. ({e})"),
             NetError::NoSpace(e) => write!(f, "There isn't enough free space for the download. ({e})"),
+            NetError::Cancelled => write!(f, "Cancelled."),
             NetError::Local(e) => write!(f, "{e}"),
         }
     }
@@ -63,7 +66,7 @@ fn curl() -> PathBuf {
 
 /// One request, no redirects followed: the status and the redirect target, with the body
 /// written to `dest` (nothing written for a redirect).
-fn once(url: &str, dest: &Path, max: u64) -> Result<(u16, String), NetError> {
+fn once(url: &str, dest: &Path, max: u64, stop: &dyn Fn() -> bool) -> Result<(u16, String), NetError> {
     let mut command = Command::new(curl());
     command
         .args(["--silent", "--show-error", "--proto", "=https", "--proto-redir", "=https"])
@@ -73,9 +76,27 @@ fn once(url: &str, dest: &Path, max: u64) -> Result<(u16, String), NetError> {
         .arg("--output")
         .arg(dest)
         .args(["--write-out", "%{http_code} %{redirect_url}", "--", url])
-        .stdin(Stdio::null());
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     crate::quiet(&mut command);
-    let out = command.output().map_err(|e| NetError::Local(format!("curl couldn't run: {e}")))?;
+    let mut child = command.spawn().map_err(|e| NetError::Local(format!("curl couldn't run: {e}")))?;
+    // Polled, so a cancel stops curl at once (it prints only a line or two, so the pipes
+    // never fill while it runs).
+    loop {
+        if stop() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(dest);
+            return Err(NetError::Cancelled);
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => return Err(NetError::Local(format!("curl couldn't be watched: {e}"))),
+        }
+    }
+    let out = child.wait_with_output().map_err(|e| NetError::Local(format!("curl's answer couldn't be read: {e}")))?;
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if let Some(e) = curl_failure(out.status.code(), &stderr) {
         return Err(e);
@@ -116,7 +137,7 @@ pub fn redirect_of(url: &str, scratch: &Path) -> Result<String, NetError> {
     if !is_allowed(url) {
         return Err(NetError::Redirected(url.into()));
     }
-    let (code, location) = once(url, scratch, SMALL)?;
+    let (code, location) = once(url, scratch, SMALL, &|| false)?;
     let _ = std::fs::remove_file(scratch);
     match code {
         300..=399 if !location.is_empty() => Ok(location),
@@ -127,12 +148,17 @@ pub fn redirect_of(url: &str, scratch: &Path) -> Result<String, NetError> {
 
 /// Downloads `url` to `dest`, following allowed redirects, at most `max` bytes.
 pub fn download(url: &str, dest: &Path, max: u64) -> Result<(), NetError> {
+    download_until(url, dest, max, &|| false)
+}
+
+/// [`download`], stopped (and the partial file deleted) as soon as `stop` says so.
+pub fn download_until(url: &str, dest: &Path, max: u64, stop: &dyn Fn() -> bool) -> Result<(), NetError> {
     let mut url = url.to_string();
     for _ in 0..=MAX_REDIRECTS {
         if !is_allowed(&url) {
             return Err(NetError::Redirected(url));
         }
-        let (code, location) = once(&url, dest, max)?;
+        let (code, location) = once(&url, dest, max, stop)?;
         match code {
             200 => return Ok(()),
             300..=399 if !location.is_empty() => {
@@ -168,6 +194,14 @@ mod tests {
         assert!(matches!(curl_failure(Some(23), "Failure writing output: No space left on device"), Some(NetError::NoSpace(_))));
         assert!(matches!(curl_failure(Some(23), "Failure writing output"), Some(NetError::Local(_))));
         assert!(matches!(curl_failure(None, "killed"), Some(NetError::Unreachable(_))));
+    }
+
+    #[test]
+    fn a_cancel_stops_before_anything_is_fetched() {
+        let dest = std::env::temp_dir().join(format!("launcher-cancel-{}", std::process::id()));
+        let result = download_until("https://github.com/method-production-suite/method-launcher/releases/latest", &dest, SMALL, &|| true);
+        assert_eq!(result, Err(NetError::Cancelled));
+        assert!(!dest.exists());
     }
 
     #[test]

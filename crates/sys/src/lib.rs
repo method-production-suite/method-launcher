@@ -91,11 +91,18 @@ pub struct InstallError {
     pub details: String,
     /// A page that helps, as (its label, its https address): the release, or how to fix it.
     pub link: Option<(String, String)>,
+    /// The person cancelled it: nothing went wrong, and nothing was changed.
+    pub cancelled: bool,
 }
 
 impl InstallError {
     pub fn new(message: impl Into<String>, details: impl Into<String>) -> Self {
-        InstallError { message: message.into(), details: details.into(), link: None }
+        InstallError { message: message.into(), details: details.into(), link: None, cancelled: false }
+    }
+
+    /// A cancelled install.
+    pub fn cancelled() -> Self {
+        InstallError { cancelled: true, ..InstallError::new("Cancelled. Nothing was installed.", "") }
     }
 
     pub fn with_link(mut self, label: impl Into<String>, url: impl Into<String>) -> Self {
@@ -186,6 +193,12 @@ impl System {
         install_macos::clean_up(&[PathBuf::from("/Applications"), env_path("HOME").unwrap_or_default().join("Applications")]);
         #[cfg(target_os = "linux")]
         install_linux::clean_up();
+    }
+
+    /// Stops `app`'s install while it is still finding, downloading or checking (spec §4.1);
+    /// once copying has begun it finishes. Nothing happens if `app` isn't the one installing.
+    pub fn cancel(&self, app: &App) {
+        fetch::cancel(app.slug);
     }
 
     /// A fresh path in the launcher's cache for a scratch or downloaded file.

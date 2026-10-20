@@ -12,7 +12,49 @@ use launcher_core::platform::Kind;
 use launcher_core::release::tag_from_location;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+/// The app whose install can be cancelled now (one runs at a time), and whether it was.
+static CANCELLABLE: Mutex<Option<String>> = Mutex::new(None);
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn cancel(slug: &str) {
+    if CANCELLABLE.lock().is_ok_and(|now| now.as_deref() == Some(slug)) {
+        CANCELLED.store(true, Ordering::SeqCst);
+    }
+}
+
+fn cancelled() -> bool {
+    CANCELLED.load(Ordering::SeqCst)
+}
+
+/// While alive, `slug`'s install can be cancelled; after, it can't.
+struct Cancellable;
+
+impl Cancellable {
+    fn new(slug: &str) -> Self {
+        if let Ok(mut now) = CANCELLABLE.lock() {
+            *now = Some(slug.to_string());
+        }
+        CANCELLED.store(false, Ordering::SeqCst);
+        Cancellable
+    }
+
+    fn check(&self) -> Result<(), InstallError> {
+        if cancelled() { Err(InstallError::cancelled()) } else { Ok(()) }
+    }
+}
+
+impl Drop for Cancellable {
+    fn drop(&mut self) {
+        if let Ok(mut now) = CANCELLABLE.lock() {
+            *now = None;
+        }
+        CANCELLED.store(false, Ordering::SeqCst);
+    }
+}
 
 pub(crate) fn fail(message: impl Into<String>, details: impl Into<String>) -> InstallError {
     InstallError::new(message, details)
@@ -23,6 +65,7 @@ pub(crate) fn fail(message: impl Into<String>, details: impl Into<String>) -> In
 pub(crate) fn net_fail(app: &App, e: &NetError) -> InstallError {
     let details = e.to_string();
     match e {
+        NetError::Cancelled => InstallError::cancelled(),
         NetError::Offline(_) => fail("You're offline. Connect to the internet and try again.", details),
         NetError::NotFound => fail(format!("This release of {} has no download for {}.", app.name, crate::system_name()), details),
         NetError::Redirected(_) => fail("The download came from somewhere unexpected, so it was stopped.", details),
@@ -60,6 +103,7 @@ impl Drop for Fetched {
 /// installed from here (spec §4.1 step 2).
 pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn Fn(Stage)) -> Result<Fetched, InstallError> {
     let file = app.installer(kind).ok_or_else(|| fail(format!("{} has no download yet.", app.name), "no release"))?;
+    let cancellable = Cancellable::new(app.slug);
 
     stage(Stage::Finding);
     let location = net::redirect_of(&app.latest_url(), &scratch(app, "redirect")?).map_err(|e| match e {
@@ -81,6 +125,7 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
             Err(e) => return Err(net_fail(app, &e)),
         }
     }
+    cancellable.check()?;
     if require_checksum && expected.is_none() {
         return Err(fail("This release can't be checked yet, so it can't be installed from here.", format!("{tag} lists no checksum for {file}"))
             .with_link("Open the release page", release_page(app, &tag)));
@@ -90,7 +135,7 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     let url = app.asset_url(&tag, &file);
     let downloaded = {
         let target = fetched.file.clone();
-        let worker = std::thread::spawn(move || net::download(&url, &target, LARGE));
+        let worker = std::thread::spawn(move || net::download_until(&url, &target, LARGE, &cancelled));
         while !worker.is_finished() {
             stage(Stage::Downloading(std::fs::metadata(&fetched.file).map(|m| m.len()).unwrap_or(0)));
             std::thread::sleep(Duration::from_millis(250));
@@ -99,6 +144,7 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     };
     downloaded.map_err(|e| net_fail(app, &e))?;
 
+    cancellable.check()?;
     stage(Stage::Checking);
     if let Some(expected) = &expected {
         let actual = hash_file(&fetched.file).map_err(|e| fail("The download couldn't be read.", e))?;
@@ -109,6 +155,7 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
             ));
         }
     }
+    cancellable.check()?;
     Ok(fetched)
 }
 
@@ -143,6 +190,19 @@ mod tests {
         assert_eq!(says(NetError::Redirected("https://example.com".into())), "The download came from somewhere unexpected, so it was stopped.");
         assert_eq!(says(NetError::Stopped("slow".into())), "The download stopped. Try again.");
         assert_eq!(says(NetError::NoSpace("full".into())), "There isn't enough free space to install Method Budget.");
+    }
+
+    #[test]
+    fn only_the_install_running_can_be_cancelled() {
+        let running = Cancellable::new("budget");
+        cancel("schedule");
+        assert!(running.check().is_ok());
+        cancel("budget");
+        assert!(running.check().is_err_and(|e| e.cancelled));
+        drop(running);
+        cancel("budget");
+        assert!(!cancelled(), "nothing to cancel once it is over");
+        assert!(net_fail(budget(), &NetError::Cancelled).cancelled);
     }
 
     #[test]
