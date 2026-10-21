@@ -43,36 +43,40 @@ Decided by the owner, 2026-10-18:
 
 ### Tests that need the owner's hands
 
-**Install and update on a real Windows and a real Linux machine.** Built and tested
-automatically; no one has run them on those systems yet (0.1.2 and 0.2.0 shipped before this
-test, on the owner's yes). Download the launcher from the latest release
-(`Method-Launcher-windows-x64-setup.exe`, `Method-Launcher-linux-x86_64.AppImage` or the
-`.deb`), then on each machine:
+**Install and update on a real Linux machine (eventually).** Built and tested automatically;
+no one has run it on Linux yet. Download the launcher from the latest release
+(`Method-Launcher-linux-x86_64.AppImage` or the `.deb`), then:
 
-1. Windows x64: install Method Schedule from its card. The setup opens; finish it. Expect
-   Schedule in the Start menu, its version on the card, and Open working.
-2. Windows, update: with an older Schedule installed and open, click Update to X. Expect the
-   question first, Schedule asked to close, then the new version.
-3. Linux x86_64: install Method Schedule. Expect `~/Applications/Method-Schedule.AppImage`,
+1. Install Method Schedule from its card. Expect `~/Applications/Method-Schedule.AppImage`,
    "Method Schedule" in the desktop's app menu with its icon, and the version on its card.
-4. Linux, update: the same as step 2, over the AppImage.
-5. Linux with apt: Settings > Install apps as > System package, then install an app. Expect
-   the password prompt, then the app listed by `dpkg-query -W method-<noun>`. Dismiss the
-   prompt once: expect "Not installed. You can install the AppImage instead."
-6. On both: Cancel during a download leaves the card as it was; a release without a
-   checksum file (or a tampered download) is refused with "This release can't be checked
-   yet" or "doesn't match the release's checksum".
-7. Linux on ARM (a Raspberry Pi 5 or an ARM laptop): the launcher's arm64 AppImage opens
-   and shows the apps, each linking how to build it.
+2. Update: with an older Schedule installed and open, click Update to X. Expect the question
+   first, Schedule asked to close, then the new version.
+3. With apt: Settings > Install apps as > System package, then install an app. With the
+   launcher installed from its `.deb`, expect the prompt "Method Launcher needs an
+   administrator's password to install a Method app's system package", then the app listed
+   by `dpkg-query -W method-<noun>`. Dismiss the prompt once: expect "Not installed. You can
+   install the AppImage instead."
+4. Cancel during a download leaves the card as it was; a release without a checksum file
+   (or a tampered download) is refused with "This release can't be checked yet" or "doesn't
+   match the release's checksum".
+5. Linux on ARM (a Raspberry Pi 5 or an ARM laptop): the launcher's arm64 AppImage opens and
+   shows the apps, each linking how to build it.
+
+**Deferred (Sam, 2026-10-20): hands-on tests on Windows.** "defer windows tests
+indefinitely." Windows stays built and tested automatically in CI and every release, and its
+notes keep saying "not yet tested by a person". When it comes back: install Method Schedule
+from its card (the setup opens; expect it in the Start menu, its version on the card, and
+Open working), then update an older Schedule that is open (the question first, then the new
+version).
 
 **Still to try on the Mac:**
 
-1. The launcher updating itself: with 0.2.0 installed, Help > Check for Updates once 0.2.1
-   is out. Expect "Update ready", Restart to Update, and 0.2.1 in About.
+1. The launcher updating itself: with 0.2.0 installed, Help > Check for Updates (0.2.1 is
+   out). Expect "Update ready", Restart to Update, and 0.2.1 in About.
 2. Update over an app that is open (the quit question).
 3. An install that needs the administrator prompt.
 4. Settings > "Open the launcher when I log in": turn it on, log out and back in, and the
-   launcher opens (the same on Windows and Linux with the tests above).
+   launcher opens (the same on Linux with the tests above).
 
 ### Release go-aheads
 
