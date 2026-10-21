@@ -88,11 +88,13 @@ website's launcher page follows the new release.
 
 ## On a developer's machine
 
-The same packaging the workflow runs:
+The same packaging the workflow runs. In the suite, every cargo command uses the shared
+build folder (`CARGO_TARGET_DIR="$HOME/.cache/method-target/method-launcher"`), and the
+packages land in its `bundle/` folder; xtask asks `cargo metadata` where that is.
 
 ```bash
 cargo xtask bundle-macos --target universal-apple-darwin # both slices joined by lipo; Method Launcher.app, ad hoc signed
-cargo xtask dmg-macos                                    # target/bundle/macos/Method-Launcher-macOS.dmg
+cargo xtask dmg-macos                                    # <target dir>/bundle/macos/Method-Launcher-macOS.dmg
 cargo xtask package-linux                                # the .deb (add --appimagetool and --runtime for the AppImage)
 cargo xtask package-windows                              # the installer (Inno Setup 6)
 ```

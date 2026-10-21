@@ -92,8 +92,27 @@ fn numeric_version(version: &str) -> &str {
     version.split(['-', '+']).next().unwrap_or(version)
 }
 
+/// Where cargo builds: `CARGO_TARGET_DIR` when set (the suite's shared cache), else what
+/// `cargo metadata` says, so nothing here assumes `./target`.
 fn target_dir() -> PathBuf {
-    std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|| root().join("target"))
+    if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(root())
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| metadata_target_dir(&out.stdout))
+        .unwrap_or_else(|| root().join("target"))
+}
+
+/// `target_directory` from `cargo metadata`'s JSON.
+fn metadata_target_dir(json: &[u8]) -> Option<PathBuf> {
+    let value: serde_json::Value = serde_json::from_slice(json).ok()?;
+    value.get("target_directory")?.as_str().map(PathBuf::from)
 }
 
 fn bundle_dir(platform: &str) -> PathBuf {
@@ -455,6 +474,13 @@ mod tests {
         // Every continuation line of the description starts with one space.
         let description = control.split("Description: ").nth(1).unwrap_or_default();
         assert!(description.lines().skip(1).all(|l| l.starts_with(' ') && !l.starts_with("  ")));
+    }
+
+    #[test]
+    fn reads_the_target_directory_from_cargo_metadata() {
+        let json = br#"{"packages":[],"target_directory":"/Users/you/.cache/method-target/method-launcher","version":1}"#;
+        assert_eq!(metadata_target_dir(json), Some(PathBuf::from("/Users/you/.cache/method-target/method-launcher")));
+        assert_eq!(metadata_target_dir(b"{}"), None);
     }
 
     #[test]
