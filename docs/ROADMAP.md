@@ -62,7 +62,7 @@ no one has run it on Linux yet. Download the launcher from the latest release
 5. Linux on ARM (a Raspberry Pi 5 or an ARM laptop): the launcher's arm64 AppImage opens and
    shows the apps, each linking how to build it.
 
-**Deferred (Sam, 2026-10-20): hands-on tests on Windows.** "defer windows tests
+**Deferred (the owner, 2026-10-20): hands-on tests on Windows.** "defer windows tests
 indefinitely." Windows stays built and tested automatically in CI and every release, and its
 notes keep saying "not yet tested by a person". When it comes back: install Method Schedule
 from its card (the setup opens; expect it in the Start menu, its version on the card, and
