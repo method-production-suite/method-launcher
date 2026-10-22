@@ -1,5 +1,6 @@
 ; The Windows installer (Inno Setup 6). `cargo xtask package-windows` runs it as
-;   ISCC /DAppVersion=<version> /DAppNumericVersion=<X.Y.Z> /DSourceDir=<repo root> /DOutputDir=<folder> method-launcher.iss
+;   ISCC /DAppVersion=<version> /DAppNumericVersion=<X.Y.Z> /DSourceDir=<repo root> /DOutputDir=<folder>
+;        /DAppBinary=<build folder>\release\method-launcher-app.exe method-launcher.iss
 ; and it writes Method-Launcher-windows-x64-setup.exe (a version-free name, so the website
 ; can link releases/latest/download/<file>).
 ;
@@ -14,6 +15,10 @@
 #endif
 #ifndef OutputDir
   #define OutputDir SourceDir + "\target\bundle\windows"
+#endif
+; The program to install; xtask passes the one in the build folder.
+#ifndef AppBinary
+  #define AppBinary SourceDir + "\target\release\method-launcher-app.exe"
 #endif
 
 [Setup]
@@ -53,7 +58,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\target\release\method-launcher-app.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppBinary}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE-MIT"; DestDir: "{app}"; DestName: "LICENSE-MIT.txt"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE-APACHE"; DestDir: "{app}"; DestName: "LICENSE-APACHE.txt"; Flags: ignoreversion
 Source: "{#SourceDir}\NOTICE"; DestDir: "{app}"; DestName: "NOTICE.txt"; Flags: ignoreversion

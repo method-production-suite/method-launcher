@@ -72,6 +72,9 @@ jobs:
     name: tag, version and notes
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Named, so xtask never asks cargo where the build is (no cargo beside a key).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       ref: ${{ steps.tag.outputs.ref }}
@@ -182,6 +185,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
+      # Named, so xtask never asks cargo where the build is (no cargo beside a key).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       # Which optional secrets exist (true or false), never their values.
       HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 != '' && secrets.CERT_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' }}
       HAS_NOTARY_KEY: ${{ secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' && secrets.AC_API_KEY_P8_BASE64 != '' }}
@@ -480,6 +485,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      # Named, so xtask never asks cargo where the build is (no cargo beside a key).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     permissions:
       contents: write # create the draft release and upload its files
