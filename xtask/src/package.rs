@@ -92,11 +92,16 @@ fn numeric_version(version: &str) -> &str {
     version.split(['-', '+']).next().unwrap_or(version)
 }
 
-/// Where cargo builds: `CARGO_TARGET_DIR` when set (the suite's shared cache), else what
-/// `cargo metadata` says, so nothing here assumes `./target`.
+/// Where cargo builds: `CARGO_TARGET_DIR` when set (the suite's shared cache, and every
+/// release job), else what `cargo metadata` says, so nothing here assumes `./target`. On a
+/// CI runner it never runs cargo: the release runs this tool beside the signing keys
+/// (SUITE-STANDARDS.md §3), so there a missing variable means `./target`.
 fn target_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR").filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
+    }
+    if std::env::var_os("CI").is_some() || std::env::var_os("GITHUB_ACTIONS").is_some() {
+        return root().join("target");
     }
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     Command::new(cargo)

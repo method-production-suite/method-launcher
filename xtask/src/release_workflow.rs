@@ -53,6 +53,45 @@ fn violations(workflow: &str) -> Vec<String> {
     found
 }
 
+/// The jobs that don't name `CARGO_TARGET_DIR` in their own `env:` (the lines before
+/// `steps:`). Without it, the prebuilt xtask would ask `cargo metadata` where the build is,
+/// and run cargo beside the keys.
+fn jobs_without_target_dir(workflow: &str) -> Vec<String> {
+    let mut missing = Vec::new();
+    let body = workflow.split_once("\njobs:\n").map_or("", |(_, b)| b);
+    let mut job: Option<(String, bool)> = None;
+    let mut header = true;
+    for line in body.lines() {
+        if let Some(name) = line.strip_prefix("  ").and_then(|l| l.strip_suffix(':')).filter(|n| !n.starts_with(' ') && !n.is_empty()) {
+            if let Some((done, false)) = job.take() {
+                missing.push(done);
+            }
+            job = Some((name.to_string(), false));
+            header = true;
+        } else if line == "    steps:" {
+            header = false;
+        } else if header
+            && line.starts_with("      CARGO_TARGET_DIR: ")
+            && let Some((_, found)) = job.as_mut()
+        {
+            *found = true;
+        }
+    }
+    if let Some((done, false)) = job {
+        missing.push(done);
+    }
+    missing
+}
+
+#[test]
+fn every_release_job_names_the_build_folder() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/workflows/release.yml");
+    let workflow = std::fs::read_to_string(&path).expect("release.yml");
+    assert_eq!(jobs_without_target_dir(&workflow), Vec::<String>::new());
+    let bad = "on: push\njobs:\n  a:\n    env:\n      CARGO_TARGET_DIR: t\n    steps:\n      - run: x\n  b:\n    steps:\n      - env:\n          CARGO_TARGET_DIR: t\n        run: y\n";
+    assert_eq!(jobs_without_target_dir(bad), vec!["b".to_string()], "a step's env doesn't count");
+}
+
 #[test]
 fn no_cargo_after_a_secret() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/workflows/release.yml");
