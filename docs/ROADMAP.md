@@ -80,8 +80,13 @@ version).
 
 ### Release go-aheads
 
-- None waiting. 0.2.1 published 2026-10-21 (the updater's TLS security fix and open at
-  login); 0.2.0 and 0.1.2 published 2026-10-20.
+- **The next release: not before 2026-11-06** unless the owner approves an override for it.
+  `clipboard-win` 5.4.3 (every earlier version was yanked on 2026-10-23; the owner chose
+  5.4.3) turns 14 days old then, and the release's crate-age check refuses it until it does.
+  Rehearsed green on f0e0d66 (run 40376303853). It will carry the clearer Linux password
+  prompt (#32), open at login following a moved launcher (#30) and the shared build folder.
+- 0.2.1 published 2026-10-21 (the updater's TLS security fix and open at login); 0.2.0 and
+  0.1.2 published 2026-10-20.
 
 ---
 
