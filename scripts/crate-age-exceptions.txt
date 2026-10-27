@@ -9,4 +9,4 @@
 rustls 0.23.46   # security fix for RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0348 and RUSTSEC-2026-0349 (0.23.45 has them), through method-update's ureq; 14 days old on 2026-10-28
 rustls-webpki 0.103.16   # security fix for RUSTSEC-2026-0382 (distrusted intermediates accepted; 0.103.15 has it), through method-update's rustls; 14 days old on 2026-11-03
 webpki-roots 1.0.10   # security fix for RUSTSEC-2026-0381 (distrusted emSign roots; 1.0.9 has it), through method-update's ureq; 14 days old on 2026-11-02
-clipboard-win 5.4.3   # cannot be pinned back: 5.4.1 and every earlier version are yanked (2026-10-23); Windows only, through eframe's arboard; 14 days old on 2026-11-06
+clipboard-win 5.4.3   # owner-approved override, by the owner on 2026-10-27, for Method Launcher 0.2.2: "Yes: owner-approved override for clipboard-win 5.4.3 in Method Storyteller 0.6.0, Method Reader 1.0.0 and the next Method Launcher release, so they can release before 2026-11-06." 5.4.1 and every earlier version are yanked (2026-10-23); 5.4.3 fixes a read past the buffer in raw::get_html; Windows only, through eframe's arboard; 14 days old on 2026-11-06, remove this line then
