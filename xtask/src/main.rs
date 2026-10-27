@@ -3,6 +3,8 @@
 //! `version`, `bundle-macos`, `dmg-macos`, `package-linux` and `package-windows` (see
 //! `package.rs` and docs/RELEASING.md).
 
+#[cfg(test)]
+mod crate_ages;
 mod package;
 #[cfg(test)]
 mod release_workflow;

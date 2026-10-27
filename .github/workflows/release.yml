@@ -140,10 +140,12 @@ jobs:
       - name: Every locked crate is at least 14 days old, apart from security fixes
         # SUITE-STANDARDS.md §6: the whole lock, before anything is built or signed. main may
         # list a young crate in scripts/crate-age-exceptions.txt while it ages out, but no
-        # release ships one; a listed security fix (RUSTSEC) may. A rehearsal ships nothing,
-        # so it honours the age-out entries, as main does.
+        # release ships one; a listed security fix (RUSTSEC) may, and so may the owner's
+        # override for this release's tag only. A rehearsal ships nothing, so it honours the
+        # age-out entries, as main does.
         env:
           REHEARSE: ${{ inputs.rehearse_version }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
           # method-libs (the suite's updater) is pinned to one reviewed revision (Cargo.toml).
@@ -152,7 +154,7 @@ jobs:
             echo "::notice::Rehearsal: the crate-age check honours the age-out entries, as main does. A real release does not."
             python3 scripts/check-crate-ages.py "${allow[@]}"
           else
-            python3 scripts/check-crate-ages.py --release "${allow[@]}"
+            python3 scripts/check-crate-ages.py --release --tag "$TAG" "${allow[@]}"
           fi
 
   build:
