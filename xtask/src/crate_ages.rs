@@ -63,6 +63,17 @@ fn an_owner_approved_override_holds_for_its_named_release_only() {
 }
 
 #[test]
+fn an_override_for_a_prerelease_is_not_the_release() {
+    let Some(py) = python() else {
+        eprintln!("skipped: no Python 3.11 or later on PATH");
+        return;
+    };
+    let f = scratch("prerelease.txt", &format!("{BASE}foo 1.2.3   # owner-approved override, the owner, 2026-10-27, release v0.2.2-rc1\n"));
+    assert_eq!(honoured(&run(py, &f, true, Some("v0.2.2"))), ["rustls 0.23.46"]);
+    assert_eq!(honoured(&run(py, &f, true, Some("v0.2.2-rc1"))), ["foo 1.2.3", "rustls 0.23.46"]);
+}
+
+#[test]
 fn an_override_that_names_no_release_is_refused() {
     let Some(py) = python() else {
         eprintln!("skipped: no Python 3.11 or later on PATH");

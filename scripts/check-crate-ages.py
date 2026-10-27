@@ -50,7 +50,7 @@ EXCEPTIONS = pathlib.Path(__file__).with_name("crate-age-exceptions.txt")
 
 
 OWNER_APPROVED = "owner-approved override"
-RELEASE = re.compile(r"\brelease (v\d+\.\d+\.\d+)\b")
+RELEASE = re.compile(r"\brelease (v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?![\w.+-])")
 
 
 class BadExceptions(Exception):
