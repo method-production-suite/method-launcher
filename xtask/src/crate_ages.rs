@@ -79,11 +79,14 @@ fn an_override_that_names_no_release_is_refused() {
         eprintln!("skipped: no Python 3.11 or later on PATH");
         return;
     };
-    let f = scratch("no-release.txt", &format!("{BASE}foo 1.2.3   # owner-approved override, the owner, 2026-10-27\n"));
-    for release in [false, true] {
-        let out = run(py, &f, release, Some("v0.2.2"));
-        assert!(!out.status.success(), "passed with release={release}");
-        assert!(String::from_utf8_lossy(&out.stderr).contains("must name its release"));
+    // No release at all, or a four-part version that only starts like v0.2.2.
+    for (file, named) in [("no-release.txt", ""), ("four-part.txt", ", release v0.2.2.1")] {
+        let f = scratch(file, &format!("{BASE}foo 1.2.3   # owner-approved override, the owner, 2026-10-27{named}\n"));
+        for release in [false, true] {
+            let out = run(py, &f, release, Some("v0.2.2"));
+            assert!(!out.status.success(), "{file} passed with release={release}");
+            assert!(String::from_utf8_lossy(&out.stderr).contains("must name its release"), "{file}");
+        }
     }
 }
 
