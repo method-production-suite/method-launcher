@@ -3,6 +3,7 @@
 
 Usage: python3 scripts/check-crate-ages.py [--days 14] [--lock Cargo.lock] [--only-changed REF]
                                           [--allow-git URL ...] [--cache FILE] [--release]
+                                          [--tag vX.Y.Z] [--exceptions FILE] [--print-exceptions]
 
 Dates each locked crates.io version by its file on static.crates.io first (a CDN, no rate
 limit; never earlier than the publish date), and asks the crates.io API (one request per crate,
@@ -17,9 +18,11 @@ An exact NAME VERSION listed in scripts/crate-age-exceptions.txt (the same forma
 Reader's), with its reason and age-out date, may be younger than the cooldown, so main stays
 green while a version that cannot be pinned back ages out, or a young version that fixes a
 security advisory (its reason names the RUSTSEC id) can ship. --release honours only the
-security lines and the owner's approved overrides (a reason starting "owner-approved override"):
-the release workflow runs it so, and no release is tagged while any other listed version is
-still young. A yanked version always fails.
+security lines and the owner's override for the release being tagged: a reason starting
+"owner-approved override" must name "release vX.Y.Z", and holds only when --tag is that
+release (no --tag, or another one, fails closed). The release workflow runs it so, and no
+release is tagged while any other listed version is still young. A yanked version always
+fails. --print-exceptions prints the honoured lines and stops, without the network.
 
 This copy converges on the suite's shared crate-age script (SUITE-STANDARDS.md §6, with an
 allow-list file) once method-libs carries it. With --only-changed REF, only packages added or bumped
@@ -47,28 +50,42 @@ EXCEPTIONS = pathlib.Path(__file__).with_name("crate-age-exceptions.txt")
 
 
 OWNER_APPROVED = "owner-approved override"
+RELEASE = re.compile(r"\brelease (v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?![\w.+-])")
 
 
-def release_honoured(reason):
-    """Whether a release may ship a young version for this reason: a security fix that names its
-    RUSTSEC advisory, or an override the owner approved for a named release (the reason starts
-    with "owner-approved override", then who approved it, when, and for which release)."""
+class BadExceptions(Exception):
+    """An owner-approved override that names no release."""
+
+
+def release_honoured(reason, tag):
+    """Whether a release tagged `tag` may ship a young version for this reason: a security fix
+    that names its RUSTSEC advisory, or the owner's override for this release (the reason starts
+    with "owner-approved override", then who approved it, when, and "release vX.Y.Z")."""
     reason = reason.strip()
-    return "RUSTSEC-" in reason or reason.startswith(OWNER_APPROVED)
+    if "RUSTSEC-" in reason:
+        return True
+    named = RELEASE.search(reason)
+    return reason.startswith(OWNER_APPROVED) and tag is not None and named is not None and named.group(1) == tag
 
 
-def excepted(security_only=False):
-    """{(name, version)} allowed under the cooldown, each listed with a reason. With
-    security_only (releases), only the lines a release may ship (`release_honoured`), not the
-    ones waiting to age out."""
-    if not EXCEPTIONS.exists():
+def excepted(path=EXCEPTIONS, release=False, tag=None):
+    """{(name, version)} allowed under the cooldown, each listed with a reason. Under --release,
+    only the lines a release tagged `tag` may ship (`release_honoured`), not the ones waiting to
+    age out. An owner-approved override that names no release is refused (BadExceptions)."""
+    if not path.exists():
         return set()
-    out = set()
-    for line in EXCEPTIONS.read_text().splitlines():
+    out, bad = set(), []
+    for n, line in enumerate(path.read_text().splitlines(), 1):
         entry, _, reason = line.partition("#")
         words = entry.split()
-        if len(words) == 2 and (not security_only or release_honoured(reason)):
+        if len(words) != 2:
+            continue
+        if reason.strip().startswith(OWNER_APPROVED) and not RELEASE.search(reason):
+            bad.append(f"line {n}: {words[0]} {words[1]} is an owner-approved override that names no \"release vX.Y.Z\"")
+        elif not release or release_honoured(reason, tag):
             out.add((words[0], words[1]))
+    if bad:
+        raise BadExceptions("\n".join(bad))
     return out
 PINNED_GIT = re.compile(r"^git\+(https://[^?#]+)\?rev=([0-9a-f]{40})#\2$")
 
@@ -183,9 +200,22 @@ def main():
     ap.add_argument(
         "--release",
         action="store_true",
-        help="for a release: honour only the exceptions that name a RUSTSEC advisory, not the age-outs",
+        help="for a release: honour only the RUSTSEC exceptions and the owner's override for --tag, not the age-outs",
     )
+    ap.add_argument("--tag", metavar="vX.Y.Z", help="the release being tagged: with --release, an owner-approved override naming it holds")
+    ap.add_argument("--exceptions", type=pathlib.Path, default=EXCEPTIONS)
+    ap.add_argument("--print-exceptions", action="store_true", help="print the honoured exceptions and stop")
     args = ap.parse_args()
+
+    try:
+        allowed_young = excepted(args.exceptions, args.release, args.tag)
+    except BadExceptions as e:
+        print(f"{args.exceptions}: an owner-approved override must name its release\n{e}", file=sys.stderr)
+        sys.exit(2)
+    if args.print_exceptions:
+        for name, version in sorted(allowed_young):
+            print(f"{name} {version}")
+        return
 
     with open(args.lock) as f:
         pkgs = external_packages(f.read())
@@ -225,7 +255,6 @@ def main():
         except FileNotFoundError:
             pass
     pins = []
-    allowed_young = excepted(security_only=args.release)
     still_young = set()
     for i, (name, version) in enumerate(sorted(pkgs)):
         stored = stored_at(name, version) if name not in known else None
@@ -264,7 +293,7 @@ def main():
     # --only-changed the run sees only the changed entries, so it cannot tell; it says nothing.
     for name, version in sorted(allowed_young - still_young if not args.only_changed else set()):
         where = "now 14 days old" if (name, version) in pkgs else "not in the lock"
-        print(f"note: {name} {version} is {where}; remove its line from {EXCEPTIONS.name}")
+        print(f"note: {name} {version} is {where}; remove its line from {args.exceptions.name}")
     print(f"\nchecked {len(pkgs)} crates.io crates; {len(bad)} problem(s)")
     if bad:
         print("downgrade with:")
