@@ -139,7 +139,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   turned on by a person).
 - **[partial] S** Windows: the setup checked against `SHA256SUMS`, run per user with its own
   window, then confirmed by looking again (spec §4.3). Built and cross-checked, not yet run
-  on a Windows machine. Missing: Authenticode, once the suite signs Windows builds.
+  on a Windows machine. No Authenticode check: Windows builds are not signed, and no certificate is planned.
 - **[have] M** Linux: the AppImage checked against `SHA256SUMS`, placed in
   `~/Applications` through a staging name, with a menu entry and icon, and its version
   recorded (spec §4.4); the ARM message; the FUSE help link; and the `.deb` as a Settings
@@ -180,8 +180,8 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 
 - **[have] M** Release workflow (everything below, with a main-only rehearsal; the Linux
   arm64 build from 0.2.0, on GitHub's arm runner): build before secrets; macOS signed,
-  notarised, stapled with the enforced universal check; Windows setup (signtool step off until a certificate
-  exists); Linux AppImage and `.deb` (x86_64, and arm64 per decision 5); version-free names
+  notarised, stapled with the enforced universal check; Windows setup (unsigned; the signtool step stays off,
+  since no certificate is planned); Linux AppImage and `.deb` (x86_64, and arm64 per decision 5); version-free names
   (`Method-Launcher-macOS.dmg`, `Method-Launcher-windows-x64-setup.exe`,
   `Method-Launcher-linux-x86_64.AppImage`, ...); `SHA256SUMS`; a draft release
   (SUITE-STANDARDS.md §3, RELEASE-CHECKLIST.md). A crate-age job checks the whole lock, and
@@ -203,8 +203,8 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   ships the install step as `/usr/libexec/method-launcher/install-deb` with a polkit action
   that says what the password is for. The AppImage launcher runs the same step through
   `sh -c`, with the plain prompt. (MReview's idea, 2026-10-20.)
-- **[missing] S** Windows code signing: the release workflow's signtool step is ready and
-  off. It needs a code-signing certificate, the owner's call (cost and who holds it), after
-  which the launcher can also check Authenticode on each app's setup.
+- **Decided: no Windows code signing** (the owner, 2026-11-02). No certificate is planned,
+  so Windows warns that the publisher is unknown. The release workflow's signtool step stays
+  off, and the launcher checks each app's setup against `SHA256SUMS` only.
 - **[missing] S** Cross-app follow-through: as each app adds `SHA256SUMS`, `--open-sample`
   and `recent.json` (above), drop the launcher's fallbacks for it and say so in the notes.
