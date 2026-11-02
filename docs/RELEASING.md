@@ -12,7 +12,7 @@ anything is signed, then makes a DRAFT release with:
 | File | What |
 |---|---|
 | `Method-Launcher-macOS.dmg` | macOS, universal (Intel and Apple silicon): Developer ID signed, notarised, stapled |
-| `Method-Launcher-windows-x64-setup.exe` | Windows x64 installer (unsigned until the suite has a certificate) |
+| `Method-Launcher-windows-x64-setup.exe` | Windows x64 installer (unsigned: no certificate is planned) |
 | `Method-Launcher-linux-amd64.deb` | Debian and Ubuntu |
 | `Method-Launcher-linux-x86_64.AppImage` | any x86_64 Linux |
 | `Method-Launcher-linux-arm64.deb` | Debian and Ubuntu on ARM (from 0.2.0) |

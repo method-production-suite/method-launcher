@@ -47,7 +47,7 @@ what comes next.
 | Platform | Built | Signed | Tested |
 | --- | --- | --- | --- |
 | macOS (Apple silicon and Intel) | Installer | Developer ID, notarised | Installs and updates tried with real releases |
-| Windows (x64) | Installer | No | Built and tested automatically, not yet tested by a person |
+| Windows (x64) | Installer | Not signed, and no certificate is planned: Windows warns that the publisher is unknown before it opens. | Built and tested automatically, not yet tested by a person |
 | Linux (x86_64) | .deb and AppImage | No | Built and tested automatically, not yet tested by a person |
 | Linux (arm64) | .deb and AppImage, from 0.2.0 | No | Built and tested automatically, not yet tested by a person. The suite's apps have no Linux ARM builds yet, so the launcher shows them and links how to build them. |
 

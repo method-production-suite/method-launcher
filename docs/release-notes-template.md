@@ -38,4 +38,8 @@ have one.
 ## Not there yet
 
 - {{A known gap.}}
+- **The Windows installer.** Not signed, and no certificate is planned: Windows warns that the publisher is unknown before it opens.
 ```
+
+Keep the Windows line as it is in every release: the owner decided against a Windows
+signing certificate (2026-11-02).

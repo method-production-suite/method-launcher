@@ -1,6 +1,6 @@
 //! Installing a suite app on Windows from its setup `.exe` (docs/spec.md §4.3): downloaded
-//! from the latest release and checked against the release's SHA-256 checksums (Authenticode
-//! once the suite signs Windows builds), then run as the signed-in person, with its own
+//! from the latest release and checked against the release's SHA-256 checksums (Windows builds
+//! are not signed, and no certificate is planned), then run as the signed-in person, with its own
 //! window, and waited for. The launcher passes nothing that changes where or how it
 //! installs. An update is the same: the setup upgrades in place. Afterwards the launcher looks
 //! for the app again, so a setup closed early is reported, not assumed.

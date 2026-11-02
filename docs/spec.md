@@ -198,8 +198,8 @@ install, removes everything it made, and shows one plain sentence (§8).
 
 What a checksum proves: that the file is the one the release lists, unchanged on the way.
 Both files come from the same release, so it doesn't prove who made the release; a signature
-does that (Developer ID on macOS today, Authenticode on Windows once the suite signs Windows
-builds). `SHA256SUMS.minisig`, signed with each app's update key (SUITE-STANDARDS.md §3,
+does that (Developer ID on macOS; Windows builds are not signed, and no certificate is
+planned). `SHA256SUMS.minisig`, signed with each app's update key (SUITE-STANDARDS.md §3,
 later), closes that gap; the launcher checks it when it is there.
 
 ### 4.2 macOS: the .dmg
@@ -244,15 +244,14 @@ later), closes that gap; the launcher checks it when it is there.
 
 ### 4.3 Windows: the setup .exe
 
-1. **Verify**: the SHA-256 matches the checksum line (§4.1). Once the suite signs Windows
-   builds, also the Authenticode signature (`WinVerifyTrust`) with the suite's publisher
-   name, pinned in code; until then the card's Details says "Checked against the release's
-   checksums. Windows builds are not signed yet."
+1. **Verify**: the SHA-256 matches the checksum line (§4.1). Windows builds are not signed,
+   and no certificate is planned (the owner, 2026-11-02), so there is no Authenticode check;
+   the card's Details says "Checked against the release's checksums. Windows builds are not
+   signed."
 2. **Run the installer** as the signed-in person, with its own window, and wait for it to
-   finish. The launcher passes nothing that changes where or how it installs. Windows'
-   SmartScreen may warn about an unsigned installer; the card says so beforehand: "Windows
-   may say it doesn't recognise this app. Choose More info, then Run anyway." (until the
-   builds are signed).
+   finish. The launcher passes nothing that changes where or how it installs. Windows warns
+   that the publisher is unknown; the card says so beforehand: "Windows may say it doesn't
+   recognise this app. Choose More info, then Run anyway."
 3. **Confirm**: re-read the installed apps (§4.6). If the app isn't there after the installer
    exits, the card says "The installer closed before Method Budget was installed."
 
