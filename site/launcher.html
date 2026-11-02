@@ -1,14 +1,21 @@
 <!-- title: Method Launcher -->
 <!-- description: The front door to the Method Production Suite: see every app, install the ones you want, keep them up to date and open them, from one small window. -->
+<!-- og:image: img/apps-light.png -->
+<!-- og:image:alt: Method Launcher's window: Storyteller, Reader and Schedule installed and up to date, each with Open, and Budget ready to install, with the recent files below. -->
 <!-- The launcher's page on the suite's site, served at /launcher/. MOrg syncs this file and
      site/img into the website at each release tag. Pictures: crates/app/src/screens.rs
-     draws them. -->
+     draws them. The og:image lines name the share picture (site/img) and its alt text, the
+     README's. -->
 <article class="prose">
   <p class="kicker">Method Launcher</p>
   <h1 class="pitch">Every app, one download.</h1>
 
   <p>The front door to the Method Production Suite. See every app, install the ones you
     want, keep them up to date and open them, from one small window.</p>
+
+  <p class="fine">Early release. On a Mac, installing and updating are tried with real
+    releases. On Windows and Linux they're built and tested automatically, and not yet tried
+    by a person.</p>
 
   <p class="get launcher-get"><a class="btn primary" href="https://github.com/method-production-suite/method-launcher/releases/latest/download/Method-Launcher-macOS.dmg">Download for Mac</a>
     <a class="other" href="https://github.com/method-production-suite/method-launcher/releases/latest">Windows and Linux</a></p>
@@ -29,6 +36,8 @@
       opened lately, each opening in the app it belongs to.</li>
     <li><strong>Demo the suite.</strong> Opens your installed apps on Field Station, an invented
       production, so you can see how they fit together before you use your own work.</li>
+    <li><strong>Your choices.</strong> Choose where apps go on a Mac, AppImage or system
+      package on Linux, whether it checks for updates, and whether it opens when you log in.</li>
   </ul>
 
   <picture>
@@ -50,12 +59,12 @@
   <h2>Platforms</h2>
   <p>macOS (Intel and Apple silicon), Windows (x64) and Linux (x86_64 and ARM). On a Mac it
     installs into Applications, or into your own Applications folder with no password, and
-    keeps itself up to date. On Linux it installs each app's AppImage, or its system package
+    keeps itself up to date. On Windows and Linux it tells you when a new launcher is out,
+    and you download it. On Linux it installs each app's AppImage, or its system package
     where you have apt. Installing on Windows and Linux is built and tested automatically,
     not yet tested by a person on those systems. The Windows installer is not signed, and no
     certificate is planned: Windows warns that the publisher is unknown before it opens. The
-    suite's apps have no Linux ARM builds yet;
-    there the launcher shows them and links how to build them.</p>
+    suite's apps have no Linux ARM builds yet; there the launcher shows them and links how to build them.</p>
 
   <picture>
     <source srcset="img/recent-dark.png" media="(prefers-color-scheme: dark)">
@@ -68,6 +77,8 @@
     never changes your files.</p>
 
   <h2>Free and open source</h2>
-  <p>MIT or Apache-2.0, like every Method app.
-    <a href="https://github.com/method-production-suite/method-launcher">The code is on GitHub</a>.</p>
+  <p>Free for good, with no account and nothing to rent. MIT or Apache-2.0.
+    <a href="https://github.com/method-production-suite/method-launcher">The code is on GitHub</a>.
+    Found a bug or want to help build it? Open an issue, or say hello in
+    <a href="https://github.com/method-production-suite/.github/discussions">Discussions</a>.</p>
 </article>
