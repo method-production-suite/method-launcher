@@ -42,4 +42,4 @@ have one.
 ```
 
 Keep the Windows line as it is in every release: the owner decided against a Windows
-signing certificate (2026-11-02).
+signing certificate (2026-11-01).

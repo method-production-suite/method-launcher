@@ -245,7 +245,7 @@ later), closes that gap; the launcher checks it when it is there.
 ### 4.3 Windows: the setup .exe
 
 1. **Verify**: the SHA-256 matches the checksum line (§4.1). Windows builds are not signed,
-   and no certificate is planned (the owner, 2026-11-02), so there is no Authenticode check;
+   and no certificate is planned (the owner, 2026-11-01), so there is no Authenticode check;
    the card's Details says "Checked against the release's checksums. Windows builds are not
    signed."
 2. **Run the installer** as the signed-in person, with its own window, and wait for it to

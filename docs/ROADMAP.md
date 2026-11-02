@@ -203,7 +203,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
   ships the install step as `/usr/libexec/method-launcher/install-deb` with a polkit action
   that says what the password is for. The AppImage launcher runs the same step through
   `sh -c`, with the plain prompt. (MReview's idea, 2026-10-20.)
-- **Decided: no Windows code signing** (the owner, 2026-11-02). No certificate is planned,
+- **Decided: no Windows code signing** (the owner, 2026-11-01). No certificate is planned,
   so Windows warns that the publisher is unknown. The release workflow's signtool step stays
   off, and the launcher checks each app's setup against `SHA256SUMS` only.
 - **[missing] S** Cross-app follow-through: as each app adds `SHA256SUMS`, `--open-sample`
