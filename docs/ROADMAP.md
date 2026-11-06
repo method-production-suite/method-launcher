@@ -71,18 +71,21 @@ version).
 
 **Still to try on the Mac:**
 
-1. The launcher updating itself: with 0.2.0 installed, Help > Check for Updates (0.2.1 is
-   out). Expect "Update ready", Restart to Update, and 0.2.1 in About.
+1. The launcher updating itself: with an older launcher installed, Help > Check for Updates
+   (0.2.2 is out). Expect "Update ready", Restart to Update, and 0.2.2 in About.
 2. Update over an app that is open (the quit question).
 3. An install that needs the administrator prompt.
 4. Settings > "Open the launcher when I log in": turn it on, log out and back in, and the
    launcher opens (the same on Linux with the tests above).
+5. Open Sample on a current app's card (from the next release): the app opens on Field
+   Station. With the app already open, expect it brought forward and the note "Method Budget is
+   open. Choose Help > Open Sample."
 
 ### Release go-aheads
 
-- None waiting. On or after 2026-11-06, remove the `clipboard-win` 5.4.3 line from
-  `scripts/crate-age-exceptions.txt`: it is 14 days old then, and the owner's override named
-  release v0.2.2 only.
+- None waiting. `clipboard-win` 5.4.3 turned 14 days old on 2026-11-06, so its line is out of
+  `scripts/crate-age-exceptions.txt`, and the owner's override, which named release v0.2.2
+  only, ended with it.
 - 0.2.2 published 2026-10-28 (open at login follows a moved launcher, the clearer Linux
   password prompt, and `clipboard-win` 5.4.3 under the owner's override for that release).
 - 0.2.1 published 2026-10-21 (the updater's TLS security fix and open at login); 0.2.0 and
