@@ -7,6 +7,19 @@ use sha2::{Digest, Sha256};
 /// (SUITE-STANDARDS.md §3).
 pub const FILE: &str = "SHA256SUMS";
 
+/// [`FILE`]'s signature, made with the app's update key (SUITE-STANDARDS.md §3).
+pub const SIGNATURE: &str = "SHA256SUMS.minisig";
+
+/// Whether `signature` (a `.minisig` file's text) is `key`'s signature of `sums`. `key` is a
+/// minisign public key's base64 line. Legacy, not prehashed, signatures are refused: the suite's
+/// releases don't make them.
+pub fn signed_by(sums: &str, signature: &str, key: &str) -> bool {
+    let (Ok(key), Ok(signature)) = (minisign_verify::PublicKey::from_base64(key), minisign_verify::Signature::decode(signature)) else {
+        return false;
+    };
+    key.verify(sums.as_bytes(), &signature, false).is_ok()
+}
+
 /// The lowercase hex SHA-256 listed for `file`, if exactly one well-formed line names it.
 pub fn lookup(sums: &str, file: &str) -> Option<String> {
     let mut found = sums.lines().filter_map(|line| {
@@ -69,5 +82,27 @@ mod tests {
         assert!(matches(b"", EMPTY));
         assert!(matches(b"abc", "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"));
         assert!(!matches(b"abd", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+    }
+
+    /// The real files from two published releases, against the keys built into the catalog.
+    #[test]
+    fn real_release_signatures_verify_with_their_own_app_s_key_only() {
+        let key = |slug| crate::catalog::by_slug(slug).and_then(|a| a.update_key).expect("key");
+        let story = (include_str!("../fixtures/storyteller-0.6.0.SHA256SUMS"), include_str!("../fixtures/storyteller-0.6.0.minisig"));
+        let reader = (include_str!("../fixtures/reader-1.1.0.SHA256SUMS"), include_str!("../fixtures/reader-1.1.0.minisig"));
+        assert!(signed_by(story.0, story.1, key("storyteller")));
+        assert!(signed_by(reader.0, reader.1, key("reader")));
+        for slug in ["reader", "schedule", "budget"] {
+            assert!(!signed_by(story.0, story.1, key(slug)), "{slug}");
+        }
+        assert!(!signed_by(reader.0, story.1, key("storyteller")), "another list");
+        assert!(!signed_by(&story.0.replacen('a', "b", 1), story.1, key("storyteller")), "a changed list");
+    }
+
+    #[test]
+    fn nonsense_never_verifies() {
+        let key = crate::catalog::by_slug("reader").and_then(|a| a.update_key).expect("key");
+        assert!(!signed_by("x", "not a signature", key));
+        assert!(!signed_by("x", include_str!("../fixtures/reader-1.1.0.minisig"), "not a key"));
     }
 }

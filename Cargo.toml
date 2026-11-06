@@ -18,6 +18,7 @@ serde_json = "1"
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "accesskit"] }
 egui = "0.36"
 sha2 = "0.11"
+minisign-verify = "0.2"
 # method-libs: the suite's updater, pinned to one reviewed revision (25c80f8, method-libs#7,
 # which updates Intel Macs too), so the launcher updates itself the way the apps do
 # (SUITE-STANDARDS.md §1).

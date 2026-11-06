@@ -52,6 +52,10 @@ pub struct App {
     pub accent: (&'static str, &'static str),
     /// The app as older releases installed it, if it was named differently.
     pub legacy: Option<Legacy>,
+    /// The public half of the app's update key, as a minisign base64 line: what its
+    /// `SHA256SUMS.minisig` is checked against. Built in only, never read from the website's
+    /// list, so that list can't vouch for a release.
+    pub update_key: Option<&'static str>,
 }
 
 impl App {
@@ -121,6 +125,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
+        update_key: Some("RWT7lXoPI+LQxEpI0no0N8iZR348dKWkopi6fgEZmM1LglD43cG7bs76"),
     },
     App {
         slug: "reader",
@@ -133,6 +138,7 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#7052BA", "#B49CF0"),
         // Releases before the rename installed the app under its earlier name.
         legacy: Some(Legacy { name: "Screepub Desktop", id_suffix: ".screepub" }),
+        update_key: Some("RWQ06/ZUjWbQ5D3FJP2eIfT8m7ZOc9rcvWNhU2FuDTcCpD0QlD5sMwRv"),
     },
     App {
         slug: "schedule",
@@ -144,6 +150,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodschedule.com",
         accent: ("#2F5FB3", "#7AA2F0"),
         legacy: None,
+        update_key: Some("RWR2zjht2ygERmWrVTxHTnMHSTeIqf4kMRZcjbDfnu93Drc2mI8MO+zC"),
     },
     App {
         slug: "budget",
@@ -155,6 +162,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodbudget.com",
         accent: ("#0E7468", "#2CC7B2"),
         legacy: None,
+        update_key: Some("RWSmu9+JiWrSzAKDX6MEwP1YNrXotSjHhH8Lly4SJEAgkFU4iU1FKYtn"),
     },
 ];
 
@@ -251,6 +259,7 @@ pub fn parse_remote(json: &str) -> Option<Vec<App>> {
             site: leak(text("site")?),
             accent: (leak(light), leak(dark)),
             legacy: built_in.and_then(|a| a.legacy),
+            update_key: built_in.and_then(|a| a.update_key),
         };
         if !valid(&app) || apps.iter().any(|a: &App| a.slug == app.slug) {
             return None;
@@ -289,6 +298,8 @@ mod tests {
         // A known app keeps its earlier name; a new one starts with no fallback release.
         assert!(apps[1].legacy.is_some());
         assert!(apps[2].released && apps[2].legacy.is_none());
+        // The update key comes from the built-in list, whatever the website's says.
+        assert!(apps[1].update_key.is_some() && apps[2].update_key.is_none());
         assert_eq!(apps[2].installer(Kind::Dmg).as_deref(), Some("Method-Office-macOS.dmg"));
     }
 

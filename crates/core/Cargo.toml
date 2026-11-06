@@ -14,4 +14,5 @@ workspace = true
 
 [dependencies]
 sha2 = { workspace = true }
+minisign-verify = { workspace = true }
 serde_json = { workspace = true }
