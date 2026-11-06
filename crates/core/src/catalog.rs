@@ -52,6 +52,9 @@ pub struct App {
     pub accent: (&'static str, &'static str),
     /// The app as older releases installed it, if it was named differently.
     pub legacy: Option<Legacy>,
+    /// The first version that takes `--open-sample` (SUITE-STANDARDS.md §2). Built in only: a
+    /// new app from the website's list shows no Open Sample until a launcher knows it.
+    pub sample_since: Option<&'static str>,
 }
 
 impl App {
@@ -101,6 +104,11 @@ impl App {
         format!("https://github.com/{ORG}/{}/releases/latest/download/latest.json", self.repo)
     }
 
+    /// Whether the installed version takes `--open-sample` (spec §7).
+    pub fn opens_sample(&self, installed: &str) -> bool {
+        self.sample_since.is_some_and(|since| crate::version::Version::parse(installed).is_some() && !crate::version::is_newer(since, installed))
+    }
+
     /// The bundle's file name in Applications: `Method Budget.app`.
     pub fn bundle_name(&self) -> String {
         format!("{}.app", self.name)
@@ -121,6 +129,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
+        sample_since: Some("0.2.0"),
     },
     App {
         slug: "reader",
@@ -133,6 +142,7 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#7052BA", "#B49CF0"),
         // Releases before the rename installed the app under its earlier name.
         legacy: Some(Legacy { name: "Screepub Desktop", id_suffix: ".screepub" }),
+        sample_since: Some("1.0.0"),
     },
     App {
         slug: "schedule",
@@ -144,6 +154,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodschedule.com",
         accent: ("#2F5FB3", "#7AA2F0"),
         legacy: None,
+        sample_since: Some("0.2.0"),
     },
     App {
         slug: "budget",
@@ -155,6 +166,7 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodbudget.com",
         accent: ("#0E7468", "#2CC7B2"),
         legacy: None,
+        sample_since: Some("0.6.0"),
     },
 ];
 
@@ -251,6 +263,7 @@ pub fn parse_remote(json: &str) -> Option<Vec<App>> {
             site: leak(text("site")?),
             accent: (leak(light), leak(dark)),
             legacy: built_in.and_then(|a| a.legacy),
+            sample_since: built_in.and_then(|a| a.sample_since),
         };
         if !valid(&app) || apps.iter().any(|a: &App| a.slug == app.slug) {
             return None;
@@ -339,6 +352,17 @@ mod tests {
         assert_eq!(budget.binary(), "method-budget-app");
         assert_eq!(budget.package(), "method-budget");
         assert_eq!(budget.source_url(), "https://github.com/method-production-suite/method-budget#build-from-source");
+    }
+
+    #[test]
+    fn open_sample_shows_only_from_the_version_that_takes_it() {
+        let budget = by_slug("budget").unwrap();
+        assert!(budget.opens_sample("0.6.0") && budget.opens_sample("0.8.1"));
+        assert!(!budget.opens_sample("0.5.9"));
+        let reader = by_slug("reader").unwrap();
+        assert!(reader.opens_sample("1.1.0") && !reader.opens_sample("0.13.0"));
+        assert!(!budget.opens_sample("not a version"));
+        assert!(!App { sample_since: None, ..*budget }.opens_sample("9.9.9"));
     }
 
     #[test]

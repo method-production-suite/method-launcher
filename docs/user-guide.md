@@ -46,9 +46,10 @@ yet, so each card links how to build the app from source.
 ## Recent files and the sample
 
 **Recent files** lists what you opened last in any of the apps; choose one to open it in its
-app. **Demo the suite** opens every installed app on Field Station, the suite's invented
-sample production. An app that is already open is left as it is, with a note to use its own
-Help > Open Sample.
+app. **Open Sample** on an app's card opens that app on Field Station, the suite's invented
+sample production. If the app is already open, the launcher brings it forward and tells you to
+choose Help > Open Sample there. **Demo the suite** does the same for every installed app at
+once.
 
 ## Settings
 
