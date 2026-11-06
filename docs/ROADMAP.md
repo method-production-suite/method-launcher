@@ -71,12 +71,15 @@ version).
 
 **Still to try on the Mac:**
 
-1. The launcher updating itself: with 0.2.0 installed, Help > Check for Updates (0.2.1 is
-   out). Expect "Update ready", Restart to Update, and 0.2.1 in About.
+1. The launcher updating itself: with an older launcher installed, Help > Check for Updates
+   (0.2.2 is out). Expect "Update ready", Restart to Update, and 0.2.2 in About.
 2. Update over an app that is open (the quit question).
 3. An install that needs the administrator prompt.
 4. Settings > "Open the launcher when I log in": turn it on, log out and back in, and the
    launcher opens (the same on Linux with the tests above).
+5. Open Sample on a current app's card (from the next release): the app opens on Field
+   Station. With the app already open, expect it brought forward and the note "Method Budget is
+   open. Choose Help > Open Sample."
 
 ### Release go-aheads
 
