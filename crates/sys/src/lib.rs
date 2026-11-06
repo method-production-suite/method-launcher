@@ -282,15 +282,12 @@ impl System {
                 && !launcher_core::release::manifest_platforms(&json).iter().any(|p| p.starts_with("darwin-x86_64"));
         }
         let kinds = launcher_core::platform::Target::current().map(|t| t.kinds()).unwrap_or_default();
-        // Every checksum file is read: an older release lists its installers in a second one.
-        let (mut listed, mut any_list) = (false, false);
-        for name in launcher_core::checksums::FILES {
-            if let Ok(sums) = net::fetch_text(&app.asset_url(&tag, name), &scratch(name)?) {
-                any_list = true;
-                listed |= kinds.iter().filter_map(|&k| app.installer(k)).any(|file| launcher_core::checksums::lookup(&sums, &file).is_some());
-            }
-        }
-        let has_installer = !kinds.is_empty() && (listed || !any_list) && !intel_missing;
+        let name = launcher_core::checksums::FILE;
+        let listed = match net::fetch_text(&app.asset_url(&tag, name), &scratch(name)?) {
+            Ok(sums) => kinds.iter().filter_map(|&k| app.installer(k)).any(|file| launcher_core::checksums::lookup(&sums, &file).is_some()),
+            Err(_) => true,
+        };
+        let has_installer = !kinds.is_empty() && listed && !intel_missing;
         Ok(Some((release, has_installer)))
     }
 

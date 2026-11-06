@@ -35,12 +35,12 @@ fn stage(launcher: &mut Launcher, shot: &str) {
     let apps = launcher.apps;
     let latest = [
         release("0.3.0", 20, "Television scripts laid out in acts."),
-        release("0.13.0", 18, "Screenplay PDFs into e-books and editable scripts."),
+        release("1.1.0", 18, "Screenplay PDFs into e-books and editable scripts."),
         release("0.3.0", 20, "One app for every Mac."),
         release("0.6.0", 20, "Fringes and globals explained line by line."),
     ];
     let behind = shot == "updates";
-    let versions = [if behind { "0.2.0" } else { "0.3.0" }, "0.13.0", if behind { "0.2.0" } else { "0.3.0" }];
+    let versions = [if behind { "0.2.0" } else { "0.3.0" }, "1.1.0", if behind { "0.2.0" } else { "0.3.0" }];
     for (i, app) in apps.iter().enumerate() {
         let found = match (i, shot) {
             (3, "updates" | "recent") => installed(app, "0.6.0"),

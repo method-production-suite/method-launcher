@@ -180,9 +180,8 @@ install, removes everything it made, and shows one plain sentence (§8).
    a second check): `SHA256SUMS` from that release. A release whose checksum file is
    missing, or has no line for the installer, cannot be installed on Windows or Linux: the
    card says "This release can't be checked yet, so it can't be installed from here" and
-   offers the release page. Every release now publishes `SHA256SUMS` (SUITE-STANDARDS.md §3);
-   for releases made before that rule, the launcher also reads `SHA256SUMS-app` (Method
-   Reader's earlier name for its installers' checksums).
+   offers the release page. Every release publishes `SHA256SUMS` (SUITE-STANDARDS.md §3), the
+   one name the launcher reads.
 3. **Download** the installer.
    - https only. Requests start at `github.com`; redirects are followed only to GitHub's
      release-asset hosts (an allow-list in code, the same list `method-update` uses), and only
@@ -384,8 +383,8 @@ functionality that the individual apps have".
 Each installed app's card has Open Sample: it opens the app with its Field Station sample
 (SUITE-STANDARDS.md §8), as a fresh untitled copy, exactly as the app's own Help > Open
 Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2) when it isn't
-already running (§6). For an installed version older than that rule, the button is hidden. The launcher ships no sample
-files.
+already running (§6). For an installed version older than that rule, the button is hidden
+(each app's first such version is in the catalog). The launcher ships no sample files.
 
 **Demo the suite** (the owner, 2026-10-19): a quiet button beside Refresh opens every
 installed app on its Field Station sample at once: Storyteller on the script, Reader on the
@@ -438,7 +437,7 @@ technical reason, selectable) and Try Again where retrying could help.
   accent.
 - **Releases are read at run time** (from 0.1.1). An app has a release when its
   `releases/latest` redirects to a version tag; it has an installer for this system when the
-  release's `SHA256SUMS` (or, for older releases, `SHA256SUMS-app`) lists one. The catalog's
+  release's `SHA256SUMS` lists one. The catalog's
   `released` flag is only the fallback when the repository can't be asked. So a first
   release shows up on the next check, with no new launcher.
 - **Network**: only `github.com` and GitHub's release-asset hosts, for manifests, checksums
@@ -446,18 +445,17 @@ technical reason, selectable) and Try Again where retrying could help.
   open in their browser. https only. The list is a
   constant in code with a test.
 
-### 9.1 What the current releases carry (2026-10-18)
+### 9.1 What the current releases carry (2026-11-06)
 
 | App | Release | macOS .dmg | Windows setup .exe | Linux AppImage / .deb | Checksums | Manifest platforms |
 |---|---|---|---|---|---|---|
-| Method Storyteller | none yet | | | | | |
-| Method Reader | v0.13.0 | yes | yes | yes / yes | `SHA256SUMS-app` covers the installers (`SHA256SUMS` covers only the command-line archives) | darwin-aarch64 |
-| Method Schedule | v0.1.0 | yes | yes | yes / yes | **none** | darwin-aarch64 |
-| Method Budget | v0.4.0 | yes | yes | yes / yes | **none** | darwin-aarch64 |
+| Method Storyteller | v0.6.0 | yes | yes | yes / yes | `SHA256SUMS`, `SHA256SUMS.minisig` | darwin-aarch64, darwin-x86_64 |
+| Method Reader | v1.1.0 | yes | yes | yes / yes | `SHA256SUMS`, `SHA256SUMS.minisig` | darwin-aarch64, darwin-x86_64 |
+| Method Schedule | v0.7.0 | yes | yes | yes / yes | `SHA256SUMS` | darwin-aarch64, darwin-x86_64 |
+| Method Budget | v0.8.1 | yes | yes | yes / yes | `SHA256SUMS` | darwin-aarch64, darwin-x86_64 |
 
-So today the launcher can install Method Reader on every system, and Method Schedule and
-Method Budget on macOS only. SUITE-STANDARDS.md §3 now requires one `SHA256SUMS` listing
-every file on every release, so their next releases fix this.
+So the launcher can install every app on macOS, Windows and Linux x86_64. No app has a Linux
+ARM build yet.
 
 ## 10. Platform traits
 
