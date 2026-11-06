@@ -464,6 +464,18 @@ impl Launcher {
         });
     }
 
+    /// Opens one app on its Field Station sample (spec §7). `--open-sample` only works as the app
+    /// starts, so an app already running is brought forward, and the note says what to choose.
+    fn open_sample(&mut self, app: &App, installed: &Installed) {
+        let running = System.is_running(app, installed);
+        let arguments: &[&str] = if running { &[] } else { &["--open-sample"] };
+        self.notice = Some(match System.open_app(app, installed, arguments) {
+            Ok(_) if running => (format!("{} is open. Choose Help > Open Sample.", app.name), false),
+            Ok(_) => (format!("Opening the Field Station sample in {}.", app.name), false),
+            Err(e) => (format!("{} couldn't be opened. {e}", app.name), true),
+        });
+    }
+
     /// Opens every installed app on its Field Station sample (the owner, 2026-10-19), with
     /// `--open-sample` for each app that isn't running (SUITE-STANDARDS.md §2). A running app
     /// is brought forward and the note says how to open the sample there; apps that aren't
@@ -627,6 +639,13 @@ impl Launcher {
                     }
                     if app.released && link(ui, "Release notes") {
                         self.link(&app.releases_url());
+                    }
+                    if let Found::Installed(installed) = &found
+                        && main == Primary::Open
+                        && app.opens_sample(&installed.version)
+                        && link(ui, "Open Sample")
+                    {
+                        self.open_sample(app, installed);
                     }
                     if !matches!(found, Found::Installed(_)) && main != Primary::VisitSite && link(ui, "Website") {
                         self.link(app.site);
