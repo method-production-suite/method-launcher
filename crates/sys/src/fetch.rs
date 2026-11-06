@@ -158,18 +158,22 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     Ok(fetched)
 }
 
-/// Checks a release's checksum list against its signature, when the release has one and the
-/// app's key is built in. Method Schedule and Method Budget don't sign theirs yet, so a missing
-/// signature passes (spec §4.1 step 2); a wrong one stops the install.
+/// Checks a release's checksum list against its signature, when the app's key is built in. A
+/// wrong signature stops the install. A missing one stops it only for an app that must sign
+/// (`signature_required`, spec §4.1 step 2).
 fn check_signature(app: &App, tag: &str, sums: &str, signature: Result<String, NetError>) -> Result<(), InstallError> {
     let Some(key) = app.update_key else { return Ok(()) };
+    let refuse = |why: &str| {
+        Err(fail(
+            format!("This release's checksums aren't signed with {}'s key, so nothing was installed.", app.name),
+            format!("{tag}: {} {why}", checksums::SIGNATURE),
+        )
+        .with_link("Open the release page", release_page(app, tag)))
+    };
     match signature {
         Ok(signature) if checksums::signed_by(sums, &signature, key) => Ok(()),
-        Ok(_) => Err(fail(
-            format!("This release's checksums aren't signed with {}'s key, so nothing was installed.", app.name),
-            format!("{tag}: {} doesn't verify", checksums::SIGNATURE),
-        )
-        .with_link("Open the release page", release_page(app, tag))),
+        Ok(_) => refuse("doesn't verify"),
+        Err(NetError::NotFound) if app.signature_required => refuse("is missing"),
         Err(NetError::NotFound) => Ok(()),
         Err(e) => Err(net_fail(app, &e)),
     }
@@ -202,8 +206,11 @@ mod tests {
         let sums = include_str!("../../core/fixtures/reader-1.1.0.SHA256SUMS");
         let signature = include_str!("../../core/fixtures/reader-1.1.0.minisig");
         assert!(check_signature(reader, "v1.1.0", sums, Ok(signature.to_string())).is_ok());
-        // An app that doesn't sign yet still installs on its checksums.
-        assert!(check_signature(reader, "v1.1.0", sums, Err(NetError::NotFound)).is_ok());
+        // An app that must sign is refused without a signature; one that doesn't sign yet still
+        // installs on its checksums.
+        let missing = check_signature(reader, "v1.1.0", sums, Err(NetError::NotFound)).expect_err("reader must sign");
+        assert_eq!(missing.message, "This release's checksums aren't signed with Method Reader's key, so nothing was installed.");
+        assert!(check_signature(budget(), "v0.8.1", sums, Err(NetError::NotFound)).is_ok());
         // A list changed after signing, or signed by another app's key, stops the install.
         let tampered = sums.replacen('a', "b", 1);
         let refused = check_signature(reader, "v1.1.0", &tampered, Ok(signature.to_string())).expect_err("tampered");
