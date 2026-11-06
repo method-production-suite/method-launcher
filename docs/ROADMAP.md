@@ -161,7 +161,8 @@ its part as of 2026-11-06 (spec §9.1), apart from the signature below.
   system (Windows and Linux built, not yet run on those machines), checked at launch and on
   Refresh, and every 6 hours while it stays open.
 - **[have] S** Recent files across the apps (spec §6).
-- **[have] S** Open Sample through `--open-sample`, with the fallback (Demo the suite).
+- **[have] S** Open Sample through `--open-sample`, on each current app's card and for all of
+  them at once (Demo the suite).
 
 ## M4: Help, identity, its own updates
 

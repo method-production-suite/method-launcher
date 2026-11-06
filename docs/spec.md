@@ -383,8 +383,8 @@ functionality that the individual apps have".
 Each installed app's card has Open Sample: it opens the app with its Field Station sample
 (SUITE-STANDARDS.md §8), as a fresh untitled copy, exactly as the app's own Help > Open
 Sample does, by opening the app with `--open-sample` (SUITE-STANDARDS.md §2) when it isn't
-already running (§6). For an installed version older than that rule, the button is hidden. The launcher ships no sample
-files.
+already running (§6). For an installed version older than that rule, the button is hidden
+(each app's first such version is in the catalog). The launcher ships no sample files.
 
 **Demo the suite** (the owner, 2026-10-19): a quiet button beside Refresh opens every
 installed app on its Field Station sample at once: Storyteller on the script, Reader on the
