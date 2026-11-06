@@ -115,19 +115,11 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     })?;
     let tag = tag_from_location(&location).ok_or_else(|| fail("The latest release isn't what we expected.", location.clone()))?;
 
-    let mut expected = None;
-    for name in checksums::FILES {
-        match net::fetch_text(&app.asset_url(&tag, name), &scratch(app, name)?) {
-            Ok(sums) => {
-                expected = checksums::lookup(&sums, &file);
-                if expected.is_some() {
-                    break;
-                }
-            }
-            Err(NetError::NotFound) => {}
-            Err(e) => return Err(net_fail(app, &e)),
-        }
-    }
+    let expected = match net::fetch_text(&app.asset_url(&tag, checksums::FILE), &scratch(app, checksums::FILE)?) {
+        Ok(sums) => checksums::lookup(&sums, &file),
+        Err(NetError::NotFound) => None,
+        Err(e) => return Err(net_fail(app, &e)),
+    };
     cancellable.check()?;
     if require_checksum && expected.is_none() {
         return Err(fail("This release can't be checked yet, so it can't be installed from here.", format!("{tag} lists no checksum for {file}"))

@@ -92,16 +92,17 @@ version).
 
 ## Cross-app items
 
-Adopted into SUITE-STANDARDS.md §2 and §3 (2026-10-18); MOrg is asking each app. Until an
-app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
+Adopted into SUITE-STANDARDS.md §2 and §3 (2026-10-18). Every app's latest release has done
+its part as of 2026-11-06 (spec §9.1), apart from the signature below.
 
-- **`SHA256SUMS` on every release**, one name, every file (spec §9.1). Today Method Reader
-  has its installers in `SHA256SUMS-app`, and Method Schedule v0.1.0 and Method Budget v0.4.0
-  have none, so the launcher can't install those two on Windows or Linux yet. Later, signed
-  as `SHA256SUMS.minisig`.
-- **`--check-for-updates` and `--open-sample`** in every app's window binary.
+- **`SHA256SUMS` on every release**, one name, every file: all four apps. The launcher reads
+  only that name now.
+- **`SHA256SUMS.minisig`**: Method Storyteller and Method Reader. Method Schedule and Method
+  Budget don't sign theirs yet.
+- **`--check-for-updates` and `--open-sample`** in every app's window binary: all four.
 - **`recent.json`** as `[{"path": ..., "opened": ...}]`, newest first, in each app's data
-  folder.
+  folder: all four. The launcher still reads the earlier `{"files": [...]}`, because a copy of
+  Method Schedule or Method Budget installed before the rule still writes it.
 - **Installed names**: Linux package `method-<noun>` and desktop entry
   `com.method<noun>.desktop.desktop`; Windows uninstall display name `Method <Noun>`.
 
@@ -206,5 +207,7 @@ app has done its part, the launcher falls back as spec §4.1, §5.1 and §7 say.
 - **Decided: no Windows code signing** (the owner, 2026-11-01). No certificate is planned,
   so Windows warns that the publisher is unknown. The release workflow's signtool step stays
   off, and the launcher checks each app's setup against `SHA256SUMS` only.
-- **[missing] S** Cross-app follow-through: as each app adds `SHA256SUMS`, `--open-sample`
-  and `recent.json` (above), drop the launcher's fallbacks for it and say so in the notes.
+- **[have] S** Cross-app follow-through: the second checksum file name is gone, now every app
+  publishes `SHA256SUMS`. The earlier `recent.json` shape and `%LOCALAPPDATA%` stay on purpose
+  (the first for copies installed before the rule, the second because Method Budget keeps its
+  data there).

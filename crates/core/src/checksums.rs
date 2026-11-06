@@ -3,9 +3,9 @@
 
 use sha2::{Digest, Sha256};
 
-/// The checksum files the launcher reads, in order. `SHA256SUMS-app` is Method Reader's
-/// current name for its installers' checksums, read until every app publishes the one name.
-pub const FILES: [&str; 2] = ["SHA256SUMS", "SHA256SUMS-app"];
+/// The checksum file the launcher reads: one name on every app's release
+/// (SUITE-STANDARDS.md §3).
+pub const FILE: &str = "SHA256SUMS";
 
 /// The lowercase hex SHA-256 listed for `file`, if exactly one well-formed line names it.
 pub fn lookup(sums: &str, file: &str) -> Option<String> {
