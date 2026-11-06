@@ -187,8 +187,8 @@ install, removes everything it made, and shows one plain sentence (§8).
    so nothing was installed." Method Reader's release must have the file, and the same sentence
    refuses one without it, because its release workflow fails rather than publishes unsigned.
    The other apps can't be required yet, so a release of theirs with no signature installs on
-   its checksums: Method Schedule and Method Budget don't sign, and Method Storyteller's workflow
-   still publishes without a signature if its key is missing. An app that changes its key needs
+   its checksums: Method Schedule and Method Budget have no signed release yet, and no Method
+   Storyteller release has shipped since its workflow began to fail without a signature. An app that changes its key needs
    a launcher release with the new key first. The signature covers the list, not the version:
    whoever can publish a release could republish an older signed list with its older
    installers, which verifies. That is a downgrade to a release the suite really made, not a

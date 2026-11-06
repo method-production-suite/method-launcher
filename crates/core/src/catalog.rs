@@ -138,7 +138,8 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
         update_key: Some("RWT7lXoPI+LQxEpI0no0N8iZR348dKWkopi6fgEZmM1LglD43cG7bs76"),
-        // Its release workflow still publishes without a signature when the key is missing.
+        // Its release workflow now fails without a signature, but no release has shipped under
+        // that yet.
         signature_required: false,
         sample_since: Some("0.2.0"),
     },
