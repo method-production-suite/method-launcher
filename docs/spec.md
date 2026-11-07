@@ -181,7 +181,18 @@ install, removes everything it made, and shows one plain sentence (§8).
    missing, or has no line for the installer, cannot be installed on Windows or Linux: the
    card says "This release can't be checked yet, so it can't be installed from here" and
    offers the release page. Every release publishes `SHA256SUMS` (SUITE-STANDARDS.md §3), the
-   one name the launcher reads.
+   one name the launcher reads. Where the release also has `SHA256SUMS.minisig`, it must verify
+   against the app's update key, built into the launcher (never read from the website's list),
+   or nothing is installed: "This release's checksums aren't signed with Method Reader's key,
+   so nothing was installed." Method Reader's release must have the file, and the same sentence
+   refuses one without it, because its release workflow fails rather than publishes unsigned.
+   The other apps can't be required yet, so a release of theirs with no signature installs on
+   its checksums: Method Schedule and Method Budget have no signed release yet, and no Method
+   Storyteller release has shipped since its workflow began to fail without a signature. An app that changes its key needs
+   a launcher release with the new key first. The signature covers the list, not the version:
+   whoever can publish a release could republish an older signed list with its older
+   installers, which verifies. That is a downgrade to a release the suite really made, not a
+   forged one.
 3. **Download** the installer.
    - https only. Requests start at `github.com`; redirects are followed only to GitHub's
      release-asset hosts (an allow-list in code, the same list `method-update` uses), and only
@@ -198,8 +209,8 @@ install, removes everything it made, and shows one plain sentence (§8).
 What a checksum proves: that the file is the one the release lists, unchanged on the way.
 Both files come from the same release, so it doesn't prove who made the release; a signature
 does that (Developer ID on macOS; Windows builds are not signed, and no certificate is
-planned). `SHA256SUMS.minisig`, signed with each app's update key (SUITE-STANDARDS.md §3,
-later), closes that gap; the launcher checks it when it is there.
+planned). `SHA256SUMS.minisig`, signed with each app's update key (SUITE-STANDARDS.md §3),
+closes that gap for the releases that have it (step 2).
 
 ### 4.2 macOS: the .dmg
 

@@ -52,6 +52,14 @@ pub struct App {
     pub accent: (&'static str, &'static str),
     /// The app as older releases installed it, if it was named differently.
     pub legacy: Option<Legacy>,
+    /// The public half of the app's update key, as a minisign base64 line: what its
+    /// `SHA256SUMS.minisig` is checked against. Built in only, never read from the website's
+    /// list, so that list can't vouch for a release.
+    pub update_key: Option<&'static str>,
+    /// Whether a release with no `SHA256SUMS.minisig` is refused. True only for an app whose
+    /// release workflow fails rather than publishes without one, so the launcher can't end up
+    /// refusing a real release.
+    pub signature_required: bool,
     /// The first version that takes `--open-sample` (SUITE-STANDARDS.md §2). Built in only: a
     /// new app from the website's list shows no Open Sample until a launcher knows it.
     pub sample_since: Option<&'static str>,
@@ -129,6 +137,10 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodstoryteller.com",
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
+        update_key: Some("RWT7lXoPI+LQxEpI0no0N8iZR348dKWkopi6fgEZmM1LglD43cG7bs76"),
+        // Its release workflow now fails without a signature, but no release has shipped under
+        // that yet.
+        signature_required: false,
         sample_since: Some("0.2.0"),
     },
     App {
@@ -142,6 +154,8 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#7052BA", "#B49CF0"),
         // Releases before the rename installed the app under its earlier name.
         legacy: Some(Legacy { name: "Screepub Desktop", id_suffix: ".screepub" }),
+        update_key: Some("RWQ06/ZUjWbQ5D3FJP2eIfT8m7ZOc9rcvWNhU2FuDTcCpD0QlD5sMwRv"),
+        signature_required: true,
         sample_since: Some("1.0.0"),
     },
     App {
@@ -154,6 +168,8 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodschedule.com",
         accent: ("#2F5FB3", "#7AA2F0"),
         legacy: None,
+        update_key: Some("RWR2zjht2ygERmWrVTxHTnMHSTeIqf4kMRZcjbDfnu93Drc2mI8MO+zC"),
+        signature_required: false,
         sample_since: Some("0.2.0"),
     },
     App {
@@ -166,6 +182,8 @@ pub const BUILT_IN: [App; 4] = [
         site: "https://methodbudget.com",
         accent: ("#0E7468", "#2CC7B2"),
         legacy: None,
+        update_key: Some("RWSmu9+JiWrSzAKDX6MEwP1YNrXotSjHhH8Lly4SJEAgkFU4iU1FKYtn"),
+        signature_required: false,
         sample_since: Some("0.6.0"),
     },
 ];
@@ -263,6 +281,8 @@ pub fn parse_remote(json: &str) -> Option<Vec<App>> {
             site: leak(text("site")?),
             accent: (leak(light), leak(dark)),
             legacy: built_in.and_then(|a| a.legacy),
+            update_key: built_in.and_then(|a| a.update_key),
+            signature_required: built_in.is_some_and(|a| a.signature_required),
             sample_since: built_in.and_then(|a| a.sample_since),
         };
         if !valid(&app) || apps.iter().any(|a: &App| a.slug == app.slug) {
@@ -302,6 +322,9 @@ mod tests {
         // A known app keeps its earlier name; a new one starts with no fallback release.
         assert!(apps[1].legacy.is_some());
         assert!(apps[2].released && apps[2].legacy.is_none());
+        // The update key comes from the built-in list, whatever the website's says.
+        assert!(apps[1].update_key.is_some() && apps[2].update_key.is_none());
+        assert!(apps[1].signature_required == by_slug(apps[1].slug).unwrap().signature_required && !apps[2].signature_required);
         assert_eq!(apps[2].installer(Kind::Dmg).as_deref(), Some("Method-Office-macOS.dmg"));
     }
 

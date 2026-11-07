@@ -1712,6 +1712,7 @@ dependencies = [
 name = "launcher-core"
 version = "0.2.2"
 dependencies = [
+ "minisign-verify",
  "serde_json",
  "sha2 0.11.0",
 ]
