@@ -16,7 +16,7 @@ launcher-sys = { path = "crates/sys" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "accesskit"] }
-egui = "0.36"
+egui = "0.37"
 sha2 = "0.11"
 minisign-verify = "0.2"
 # method-libs: the suite's updater, pinned to one reviewed revision (25c80f8, method-libs#7,
