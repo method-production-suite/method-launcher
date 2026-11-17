@@ -33,8 +33,6 @@ allow = [
     "Ubuntu-font-1.0",
     # webpki-roots, through method-update: the Mozilla root certificate list as data.
     "CDLA-Permissive-2.0",
-    # File-level copyleft, used unmodified. Fine to ship alongside MIT/Apache code.
-    "MPL-2.0",
 ]
 confidence-threshold = 0.9
 
