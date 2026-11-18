@@ -3,6 +3,8 @@
 //! `catalog`, `latest` and `install` read the network and `status` this computer's apps, so
 //! they are left to the weekly build's real runs and the release check.
 
+#![allow(clippy::expect_used, reason = "a test that can't start the command line should stop there")]
+
 use launcher_core::catalog::BUILT_IN;
 use std::process::{Command, Output};
 
