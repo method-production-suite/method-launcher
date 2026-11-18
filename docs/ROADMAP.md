@@ -189,7 +189,7 @@ its part as of 2026-11-06 (spec §9.1), apart from the signature below.
 
 - **[have] M** Release workflow (everything below, with a main-only rehearsal; the Linux
   arm64 build from 0.2.0, on GitHub's arm runner): build before secrets; macOS signed,
-  notarised, stapled with the enforced universal check; Windows setup (unsigned; the signtool step stays off,
+  notarised, stapled with the enforced universal check; Windows setup (unsigned, with no signing step,
   since no certificate is planned); Linux AppImage and `.deb` (x86_64, and arm64 per decision 5); version-free names
   (`Method-Launcher-macOS.dmg`, `Method-Launcher-windows-x64-setup.exe`,
   `Method-Launcher-linux-x86_64.AppImage`, ...); `SHA256SUMS`; a draft release
@@ -213,8 +213,8 @@ its part as of 2026-11-06 (spec §9.1), apart from the signature below.
   that says what the password is for. The AppImage launcher runs the same step through
   `sh -c`, with the plain prompt. (MReview's idea, 2026-10-20.)
 - **Decided: no Windows code signing** (the owner, 2026-11-01). No certificate is planned,
-  so Windows warns that the publisher is unknown. The release workflow's signtool step stays
-  off, and the launcher checks each app's setup against `SHA256SUMS` only.
+  so Windows warns that the publisher is unknown. The release workflow's signtool steps came
+  out in 0.2.3, and the launcher checks each app's setup against `SHA256SUMS` only.
 - **[have] S** Cross-app follow-through: the second checksum file name is gone, now every app
   publishes `SHA256SUMS`. The earlier `recent.json` shape and `%LOCALAPPDATA%` stay on purpose
   (the first for copies installed before the rule, the second because Method Budget keeps its
