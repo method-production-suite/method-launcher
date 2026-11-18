@@ -16,16 +16,15 @@
 #
 # Signing uses the suite's secret names (Method Budget's), so one 1Password item feeds every
 # repository. Each signing step is skipped without its secrets; the build is the same
-# otherwise (ad-hoc signed on the Mac, unsigned on Windows):
+# otherwise (ad-hoc signed on the Mac):
 #   macOS signing:     DEVELOPER_ID_CERT_P12_BASE64 (the Developer ID Application .p12,
 #                      base64), CERT_PASSWORD, KEYCHAIN_PASSWORD (any new password for the
 #                      runner's throwaway keychain). The identity is the one the .p12 holds.
 #   macOS notarizing:  AC_API_KEY_ID, AC_API_ISSUER_ID, AC_API_KEY_P8_BASE64 (an App Store
 #                      Connect API key, the .p8 base64); needs the signing secrets too.
-#   Windows signing:   WINDOWS_CERTIFICATE (a code signing .pfx, base64),
-#                      WINDOWS_CERTIFICATE_PASSWORD. The suite's model step (Method
-#                      Schedule's), for the app and the installer; no certificate exists
-#                      yet, so it stays off.
+#   Windows:           not signed. No certificate is planned (the owner, 2026-11-01), so
+#                      there is no signing step; the setup is covered by SHA256SUMS and
+#                      its signature like every other file.
 #   Updates (macOS):   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the suite's
 #                      names; the launcher's own minisign key, "Method Launcher updater key" in
 #                      1Password, key ID E115E2CD9AEE0DF9; its public half is PUBKEY in
@@ -192,7 +191,6 @@ jobs:
       # Which optional secrets exist (true or false), never their values.
       HAS_DEVELOPER_ID: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 != '' && secrets.CERT_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' }}
       HAS_NOTARY_KEY: ${{ secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' && secrets.AC_API_KEY_P8_BASE64 != '' }}
-      HAS_WIN_SIGNING: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
       # appimagetool 1.9.1 and the type 2 runtime 20251108 (AppImage project releases), for
       # the runner's chip; the SHA-256s are the ones GitHub publishes for those assets.
@@ -248,9 +246,6 @@ jobs:
           echo "Developer ID signing: $sign. Notarizing: $notarize."
           if [ "$RUNNER_OS" = macOS ] && [ "$sign" = no ]; then
             echo "::notice::No Developer ID secrets: the macOS build is ad-hoc signed and not notarized (docs/RELEASING.md)."
-          fi
-          if [ "$RUNNER_OS" = Windows ] && [ "$HAS_WIN_SIGNING" != true ]; then
-            echo "::notice::No Windows certificate: the installer is unsigned (docs/RELEASING.md)."
           fi
           { echo "MACOS_SIGN=$sign"; echo "MACOS_NOTARIZE=$notarize"; } >> "$GITHUB_ENV"
 
@@ -384,45 +379,10 @@ jobs:
           if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
           rm -f "$RUNNER_TEMP/AuthKey.p8"
 
-      # Windows signing, skipped without the secrets (the suite's model step, from Method
-      # Schedule): the app itself before it goes into the installer, then the installer.
-      - name: Sign the app (Windows)
-        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-          & $signtool.FullName sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 target/release/method-launcher-app.exe
-          $code = $LASTEXITCODE
-          Remove-Item $pfx
-          if ($code -ne 0) { exit $code }
-
       - name: Build the installer (Windows)
         if: runner.os == 'Windows'
-        # The prebuilt xtask, directly: the app may already be signed with the certificate.
+        # The prebuilt xtask, directly, on the app the build step made.
         run: target/debug/xtask.exe package-windows --no-build
-
-      - name: Sign the installer (Windows)
-        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-          $code = 0
-          foreach ($f in Get-ChildItem target/bundle/windows/*.exe) {
-            & $signtool.FullName sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $f.FullName
-            if ($LASTEXITCODE -ne 0) { $code = $LASTEXITCODE; break }
-          }
-          Remove-Item $pfx
-          if ($code -ne 0) { exit $code }
 
       - name: Build the packages (Linux)
         if: runner.os == 'Linux'
