@@ -6,7 +6,8 @@
 //! run time from its repository (docs/spec.md §5.1); `released` is only the offline fallback.
 
 use crate::platform::Kind;
-use std::sync::RwLock;
+use std::collections::BTreeSet;
+use std::sync::{Mutex, PoisonError, RwLock};
 
 /// Where the suite publishes its list of apps.
 pub const CATALOG_URL: &str = "https://methodproduction.com/apps.json";
@@ -204,18 +205,44 @@ pub fn apps() -> &'static [App] {
     }
 }
 
-/// Puts a checked list in use. The list lives for the rest of the run (a few hundred bytes,
-/// replaced at most when the website's list changes).
+/// Puts a checked list in use.
 pub fn set_apps(apps: Vec<App>) {
-    let apps: &'static [App] = Box::leak(apps.into_boxed_slice());
+    let apps = kept_list(apps);
     match CURRENT.write() {
         Ok(mut current) => *current = apps,
         Err(poisoned) => *poisoned.into_inner() = apps,
     }
 }
 
-fn leak(text: &str) -> &'static str {
-    Box::leak(text.to_owned().into_boxed_str())
+/// Every list put in use this run, kept once each. A list lives for the rest of the run, since
+/// [`apps`] hands it out, so the website's list read again (every check for new releases)
+/// reuses the copy it already has rather than growing the launcher's memory.
+static LISTS: Mutex<Vec<&'static [App]>> = Mutex::new(Vec::new());
+
+fn kept_list(apps: Vec<App>) -> &'static [App] {
+    if apps.as_slice() == BUILT_IN.as_slice() {
+        return &BUILT_IN;
+    }
+    let mut lists = LISTS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(&kept) = lists.iter().find(|kept| **kept == apps.as_slice()) {
+        return kept;
+    }
+    let kept: &'static [App] = Box::leak(apps.into_boxed_slice());
+    lists.push(kept);
+    kept
+}
+
+/// Every text a website list has carried this run, kept once each, for the same reason.
+static TEXTS: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+
+fn keep(text: &str) -> &'static str {
+    let mut texts = TEXTS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(&kept) = texts.get(text) {
+        return kept;
+    }
+    let kept: &'static str = Box::leak(text.to_owned().into_boxed_str());
+    texts.insert(kept);
+    kept
 }
 
 /// Whether an entry follows the suite's rules (SUITE-STANDARDS.md §2): "Method <Noun>", slug
@@ -272,14 +299,14 @@ pub fn parse_remote(json: &str) -> Option<Vec<App>> {
             return None;
         }
         let app = App {
-            slug: leak(slug),
-            name: leak(text("name")?),
-            tagline: leak(text("tagline")?),
-            repo: leak(text("repo")?),
-            bundle_id: leak(text("bundle_id")?),
+            slug: keep(slug),
+            name: keep(text("name")?),
+            tagline: keep(text("tagline")?),
+            repo: keep(text("repo")?),
+            bundle_id: keep(text("bundle_id")?),
             released: built_in.is_none_or(|a| a.released),
-            site: leak(text("site")?),
-            accent: (leak(light), leak(dark)),
+            site: keep(text("site")?),
+            accent: (keep(light), keep(dark)),
             legacy: built_in.and_then(|a| a.legacy),
             update_key: built_in.and_then(|a| a.update_key),
             signature_required: built_in.is_some_and(|a| a.signature_required),
@@ -314,6 +341,17 @@ mod tests {
         {"slug":"reader","name":"Method Reader","tagline":"Screenplay PDFs into e-books.","repo":"method-reader","bundle_id":"com.methodreader.desktop","site":"https://methodreader.com","accent":["#7052BA","#B49CF0"]},
         {"slug":"office","name":"Method Office","tagline":"A new app.","repo":"method-office","bundle_id":"com.methodoffice.desktop","site":"https://methodoffice.com","accent":["#123456","#ABCDEF"]}
     ]}"##;
+
+    #[test]
+    fn reading_the_list_again_keeps_no_second_copy() {
+        let (first, again) = (parse_remote(REMOTE).unwrap(), parse_remote(REMOTE).unwrap());
+        for (a, b) in first.iter().zip(&again) {
+            assert!(std::ptr::eq(a.name, b.name) && std::ptr::eq(a.tagline, b.tagline) && std::ptr::eq(a.accent.0, b.accent.0), "{}", a.slug);
+        }
+        let (kept, kept_again) = (kept_list(first), kept_list(again));
+        assert!(std::ptr::eq(kept, kept_again));
+        assert_eq!(kept_list(BUILT_IN.to_vec()), BUILT_IN.as_slice());
+    }
 
     #[test]
     fn reads_the_websites_list() {
