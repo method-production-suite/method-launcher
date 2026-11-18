@@ -111,6 +111,7 @@ fn screens() {
                     delta: egui::vec2(0.0, -2000.0),
                     modifiers: egui::Modifiers::NONE,
                     phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Wheel,
                 });
                 harness.run_steps(8);
                 // No pointer in the picture.

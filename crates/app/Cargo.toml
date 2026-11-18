@@ -31,4 +31,4 @@ method-update = { workspace = true }
 
 [dev-dependencies]
 # Draws the window to an image with no window, for the pictures test in src/screens.rs.
-egui_kittest = { version = "=0.36.2", features = ["eframe", "wgpu"] }
+egui_kittest = { version = "=0.37.0", features = ["eframe", "wgpu"] }

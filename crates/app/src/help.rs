@@ -102,7 +102,7 @@ fn close_button(ui: &mut egui::Ui) -> bool {
 
 fn about(ctx: &egui::Context) -> bool {
     let mut open = true;
-    centered(egui::Window::new("About Method Launcher").id(egui::Id::new("launcher.about"))).show(ctx, |ui| {
+    centered(egui::Window::new("About Method Launcher").id(egui::Id::unique("launcher.about"))).show(ctx, |ui| {
         ui.set_width(380.0);
         ui.heading("Method Launcher");
         ui.label(format!("Version {VERSION}"));
@@ -124,7 +124,7 @@ fn about(ctx: &egui::Context) -> bool {
 fn shortcuts_window(ctx: &egui::Context) -> bool {
     let mut open = true;
     let rows = shortcuts();
-    centered(egui::Window::new("Keyboard Shortcuts").id(egui::Id::new("launcher.shortcuts"))).show(ctx, |ui| {
+    centered(egui::Window::new("Keyboard Shortcuts").id(egui::Id::unique("launcher.shortcuts"))).show(ctx, |ui| {
         egui::Grid::new("launcher.shortcut_grid").num_columns(2).spacing([24.0, 6.0]).striped(true).show(ui, |ui| {
             for (label, keys) in &rows {
                 ui.label(*label);
@@ -142,7 +142,7 @@ fn shortcuts_window(ctx: &egui::Context) -> bool {
 fn licenses(ctx: &egui::Context, tab: usize) -> Option<usize> {
     let mut chosen = tab;
     let mut open = true;
-    centered(egui::Window::new("Licenses and Notices").id(egui::Id::new("launcher.licenses")).default_size([720.0, 480.0])).show(ctx, |ui| {
+    centered(egui::Window::new("Licenses and Notices").id(egui::Id::unique("launcher.licenses")).default_size([720.0, 480.0])).show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (n, (name, _)) in NOTICES.iter().enumerate() {
                 if ui.selectable_label(n == chosen, *name).clicked() {
@@ -228,7 +228,8 @@ mod drawn {
     use egui_kittest::kittest::Queryable;
 
     fn harness(window: Window) -> Harness<'static, Option<Window>> {
-        Harness::builder().with_size(egui::vec2(900.0, 700.0)).build_ui_state(
+        // The app's own fonts, so a character they can't draw fails here as it would show.
+        Harness::builder().with_size(egui::vec2(900.0, 700.0)).with_context_setup(crate::theme::use_system_font).build_ui_state(
             |ui, open: &mut Option<Window>| {
                 if let Some(w) = *open {
                     *open = show(ui.ctx(), w);
