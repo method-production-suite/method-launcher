@@ -394,7 +394,7 @@ impl Launcher {
             ),
         };
         let mut answer = None;
-        egui::Modal::new(egui::Id::new("confirm-quit")).show(ctx, |ui| {
+        egui::Modal::new(egui::Id::unique("confirm-quit")).show(ctx, |ui| {
             ui.set_max_width(420.0);
             ui.label(egui::RichText::new(title).size(18.0).strong());
             ui.add_space(8.0);
@@ -811,7 +811,7 @@ impl Launcher {
         let mut open = true;
         let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         egui::Window::new("Settings")
-            .id(egui::Id::new("launcher.settings"))
+            .id(egui::Id::unique("launcher.settings"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)

@@ -106,5 +106,9 @@ pub fn use_system_font(ctx: &egui::Context) {
     if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
         family.insert(0, "system".to_owned());
     }
+    // Last in the monospace fallbacks, for what egui's own lack: ⌘ in the shortcut keys.
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+        family.push("system".to_owned());
+    }
     ctx.set_fonts(fonts);
 }
