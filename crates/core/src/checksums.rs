@@ -84,14 +84,19 @@ mod tests {
         assert!(!matches(b"abd", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     }
 
-    /// The real files from two published releases, against the keys built into the catalog.
+    /// The real files from three published releases, against the keys built into the catalog.
     #[test]
     fn real_release_signatures_verify_with_their_own_app_s_key_only() {
         let key = |slug| crate::catalog::by_slug(slug).and_then(|a| a.update_key).expect("key");
         let story = (include_str!("../fixtures/storyteller-0.6.0.SHA256SUMS"), include_str!("../fixtures/storyteller-0.6.0.minisig"));
         let reader = (include_str!("../fixtures/reader-1.1.0.SHA256SUMS"), include_str!("../fixtures/reader-1.1.0.minisig"));
+        let schedule = (include_str!("../fixtures/schedule-0.8.0.SHA256SUMS"), include_str!("../fixtures/schedule-0.8.0.minisig"));
         assert!(signed_by(story.0, story.1, key("storyteller")));
         assert!(signed_by(reader.0, reader.1, key("reader")));
+        assert!(signed_by(schedule.0, schedule.1, key("schedule")));
+        for slug in ["storyteller", "reader", "budget"] {
+            assert!(!signed_by(schedule.0, schedule.1, key(slug)), "{slug}");
+        }
         for slug in ["reader", "schedule", "budget"] {
             assert!(!signed_by(story.0, story.1, key(slug)), "{slug}");
         }
