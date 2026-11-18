@@ -100,12 +100,12 @@ its part as of 2026-11-06 (spec §9.1), apart from the signature below.
 
 - **`SHA256SUMS` on every release**, one name, every file: all four apps. The launcher reads
   only that name now.
-- **`SHA256SUMS.minisig`**: Method Storyteller and Method Reader sign, and the launcher checks
-  it against each app's built-in key when it is there. It requires it for Method Reader, whose
-  release workflow fails rather than publishes unsigned. Each other app moves across
-  (`signature_required`) once a release has shipped that way: Method Storyteller's workflow now
-  fails without a signature but has no release under it yet, and Method Schedule and Method
-  Budget have no signed release yet.
+- **`SHA256SUMS.minisig`**: Method Storyteller, Method Reader and Method Schedule sign, and
+  the launcher checks it against each app's built-in key when it is there. It requires it for
+  Method Reader and Method Schedule (since v0.8.0), whose release workflows fail rather than
+  publish unsigned. Each other app moves across (`signature_required`) once a release has
+  shipped that way: Method Storyteller's workflow now fails without a signature but has no
+  release under it yet, and Method Budget has no signed release yet.
 - **`--check-for-updates` and `--open-sample`** in every app's window binary: all four.
 - **`recent.json`** as `[{"path": ..., "opened": ...}]`, newest first, in each app's data
   folder: all four. The launcher still reads the earlier `{"files": [...]}`, because a copy of

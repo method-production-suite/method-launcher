@@ -170,7 +170,8 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#2F5FB3", "#7AA2F0"),
         legacy: None,
         update_key: Some("RWR2zjht2ygERmWrVTxHTnMHSTeIqf4kMRZcjbDfnu93Drc2mI8MO+zC"),
-        signature_required: false,
+        // v0.8.0 shipped signed, and its release workflow fails rather than publish unsigned.
+        signature_required: true,
         sample_since: Some("0.2.0"),
     },
     App {
