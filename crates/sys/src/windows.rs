@@ -2,7 +2,7 @@
 //! display name `Method <Noun>` (docs/spec.md §4.6), and opened by running their executable
 //! (§6).
 
-use crate::parse::{exe_from_icon, reg_uninstall};
+use crate::parse::{reg_uninstall, windows_exe};
 use crate::{env_path, output, run, start};
 use launcher_core::catalog::App;
 use launcher_core::platform::{Installed, Opened};
@@ -25,11 +25,7 @@ pub fn locate(app: &App) -> Option<Installed> {
     UNINSTALL_KEYS.iter().find_map(|key| {
         let listing = output(&reg.to_string_lossy(), &["query", key, "/s"])?;
         let entry = reg_uninstall(&listing, app.name)?;
-        let from_icon = exe_from_icon(&entry.display_icon).map(PathBuf::from).filter(|p| p.is_file());
-        let location = PathBuf::from(entry.install_location.trim_matches('"'));
-        let path = from_icon.or_else(|| {
-            [format!("{}.exe", app.binary()), format!("{}.exe", app.name)].into_iter().map(|exe| location.join(exe)).find(|p| p.is_file())
-        })?;
+        let path = windows_exe(&entry, &app.binary(), app.name, Path::is_file)?;
         Some(Installed { path, version: entry.version, legacy: false })
     })
 }
