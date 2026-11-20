@@ -1,11 +1,14 @@
 #!/bin/sh
 # Method Launcher's install step for an app's .deb, run by pkexec as root (polkit action
-# com.methodlauncher.desktop.install-deb). Arguments: the downloaded .deb and its SHA-256.
+# com.methodlauncher.desktop.install-deb). Arguments: the downloaded .deb, its SHA-256, and the
+# Method app's package name (method-<noun>), which the .deb must be.
 # The same script as INSTALL in crates/sys/src/deb.rs; a test keeps them equal.
 set -eu
+printf '%s' "$3" | /usr/bin/grep -qxE 'method-[a-z]+' || exit 5
 dir=$(/bin/mktemp -d /tmp/method-launcher-deb.XXXXXXXX)
 trap '/bin/rm -rf "$dir"' EXIT
 /bin/cp -- "$1" "$dir/package.deb" || exit 4
 printf '%s  %s
 ' "$2" "$dir/package.deb" | /usr/bin/sha256sum --check --strict --quiet - || exit 3
+[ "$(/usr/bin/dpkg-deb --field "$dir/package.deb" Package)" = "$3" ] || exit 5
 /usr/bin/apt-get install -y -- "$dir/package.deb"

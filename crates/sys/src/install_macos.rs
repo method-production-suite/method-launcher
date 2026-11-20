@@ -278,8 +278,39 @@ fn swap(staging: &Path, dest: &Path, old: Option<&Path>, aside: &Path) -> Result
     Ok(())
 }
 
-/// The same copy and swap as one shell script run with an administrator's password, through
-/// the system's own prompt (spec §4.2 step 3). The person is told why first, by the card.
+/// What the administrator step exits with when its own copy fails the checks.
+const ADMIN_UNVERIFIED: i32 = 5;
+
+/// The shell script the administrator step runs: copy into the staging name, check that copy
+/// as root (the same signature and notarisation checks as [`verify_bundle`]), and only then
+/// swap it in. A copy that fails is removed and nothing else changes, so what root puts in
+/// place is what root checked, whatever happened to the mounted image after the launcher's
+/// own check.
+fn admin_script(source: &Path, staging: &Path, dest: &Path, replace_dest: bool, elsewhere: Option<&Path>, aside: &Path) -> String {
+    let q = |p: &Path| shell_quote(&p.to_string_lossy());
+    let (staged, codesign) = (q(staging), verify::codesign_args(&staging.to_string_lossy()));
+    let codesign: Vec<String> = codesign.iter().map(|a| shell_quote(a)).collect();
+    let spctl: Vec<String> = verify::spctl_args(&staging.to_string_lossy()).iter().map(|a| shell_quote(a)).collect();
+    let mut script = format!(
+        "{DITTO} {} {staged} && if ! {{ {CODESIGN} {} && out=$({SPCTL} {} 2>&1) && printf '%s\\n' \"$out\" | /usr/bin/grep -qx 'source=Notarized Developer ID'; }}; then /bin/rm -rf {staged}; exit {ADMIN_UNVERIFIED}; fi && ",
+        q(source),
+        codesign.join(" "),
+        spctl.join(" "),
+    );
+    if replace_dest {
+        script.push_str(&format!("/bin/mv {} {} && /bin/mv {staged} {} && /bin/rm -rf {}", q(dest), q(aside), q(dest), q(aside)));
+    } else {
+        script.push_str(&format!("/bin/mv {staged} {}", q(dest)));
+    }
+    if let Some(elsewhere) = elsewhere {
+        script.push_str(&format!(" && /bin/rm -rf {}", q(elsewhere)));
+    }
+    script
+}
+
+/// The same copy, check and swap as one shell script run with an administrator's password,
+/// through the system's own prompt (spec §4.2 step 3). The person is told why first, by the
+/// card.
 fn admin_install(
     app: &App,
     source: &Path,
@@ -289,16 +320,7 @@ fn admin_install(
     elsewhere: Option<&Path>,
     aside: &Path,
 ) -> Result<(), InstallError> {
-    let q = |p: &Path| shell_quote(&p.to_string_lossy());
-    let mut script = format!("/usr/bin/ditto {} {} && ", q(source), q(staging));
-    if old.is_some_and(|o| o == dest) {
-        script.push_str(&format!("/bin/mv {} {} && /bin/mv {} {} && /bin/rm -rf {}", q(dest), q(aside), q(staging), q(dest), q(aside)));
-    } else {
-        script.push_str(&format!("/bin/mv {} {}", q(staging), q(dest)));
-    }
-    if let Some(elsewhere) = elsewhere {
-        script.push_str(&format!(" && /bin/rm -rf {}", q(elsewhere)));
-    }
+    let script = admin_script(source, staging, dest, old.is_some_and(|o| o == dest), elsewhere, aside);
     let apple = format!(
         "do shell script \"{}\" with prompt \"{}\" with administrator privileges",
         applescript_escape(&script),
@@ -306,6 +328,10 @@ fn admin_install(
     );
     match tool(OSASCRIPT, &["-e", &apple]) {
         Ok((true, _)) => Ok(()),
+        Ok((false, text)) if text.trim_end().ends_with(&format!("({ADMIN_UNVERIFIED})")) => Err(fail(
+            format!("This copy of {} couldn't be verified, so nothing was installed.", app.name),
+            "the administrator step's own copy failed the signature or notarisation check",
+        )),
         Ok((false, text)) if text.contains("-128") => Err(fail(
             "Not installed. You can install it in your own Applications folder instead: choose that in Settings.",
             "the administrator prompt was cancelled",
@@ -372,6 +398,43 @@ mod tests {
         assert_eq!(shell_quote("/Applications/Method Budget.app"), "'/Applications/Method Budget.app'");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
         assert_eq!(applescript_escape(r#"say "hi" \ bye"#), r#"say \"hi\" \\ bye"#);
+    }
+
+    /// Root copies, checks its own copy, and only then swaps it in; a copy that fails is
+    /// removed before anything moves. The script, run with stand-ins for the tools, does that.
+    #[test]
+    fn the_administrator_step_checks_its_own_copy_before_the_swap() {
+        let (source, staging, dest, aside) = (
+            Path::new("/Volumes/m/Method Budget.app"),
+            Path::new("/Applications/.Method Budget.app.installing-1"),
+            Path::new("/Applications/Method Budget.app"),
+            Path::new("/Applications/.Method Budget.app.replaced-1"),
+        );
+        let script = admin_script(source, staging, dest, true, None, aside);
+        let at = |needle: &str| script.find(needle).unwrap_or_else(|| panic!("{needle} in {script}"));
+        assert!(at(DITTO) < at(CODESIGN) && at(CODESIGN) < at(SPCTL) && at(SPCTL) < at("/bin/mv"));
+        assert!(script.contains(&shell_quote(&format!("-R={}", verify::requirement()))), "the team requirement, quoted");
+        assert!(script.contains("exit 5"));
+
+        // Run it unprivileged in a scratch folder with the tools swapped for stand-ins.
+        let dir = std::env::temp_dir().join(format!("launcher-admin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src.app")).unwrap();
+        std::fs::create_dir_all(dir.join("dest.app")).unwrap();
+        let run = |codesign_ok: bool, notarised: bool| {
+            let script = admin_script(&dir.join("src.app"), &dir.join("staging.app"), &dir.join("dest.app"), true, None, &dir.join("aside.app"))
+                .replace(DITTO, "/bin/cp -R")
+                .replace(CODESIGN, if codesign_ok { "true" } else { "false" })
+                .replace(SPCTL, if notarised { "printf 'x: accepted\\nsource=Notarized Developer ID\\n'" } else { "printf 'x: rejected\\n'" });
+            Command::new("/bin/sh").args(["-c", &script]).status().unwrap().code()
+        };
+        assert_eq!(run(false, true), Some(5));
+        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
+        assert_eq!(run(true, false), Some(5));
+        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
+        assert_eq!(run(true, true), Some(0));
+        assert!(!dir.join("staging.app").exists() && !dir.join("aside.app").exists() && dir.join("dest.app").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
