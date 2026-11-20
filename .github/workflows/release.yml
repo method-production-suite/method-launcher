@@ -147,13 +147,13 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          # method-libs (the suite's updater) is pinned to one reviewed revision (Cargo.toml).
-          allow=(--allow-git https://github.com/method-production-suite/method-libs)
+          # Git sources pass only when listed in scripts/crate-age-git-allow.txt (method-libs,
+          # pinned to one reviewed revision in Cargo.toml).
           if [ -n "$REHEARSE" ]; then
             echo "::notice::Rehearsal: the crate-age check honours the age-out entries, as main does. A real release does not."
-            python3 scripts/check-crate-ages.py "${allow[@]}"
+            python3 scripts/check-crate-ages.py
           else
-            python3 scripts/check-crate-ages.py --release --tag "$TAG" "${allow[@]}"
+            python3 scripts/check-crate-ages.py --release --tag "$TAG"
           fi
 
   build:
