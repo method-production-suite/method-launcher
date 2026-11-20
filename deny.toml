@@ -8,7 +8,8 @@
 unsound = "all"
 ignore = [
     # Unmaintained; reached only through eframe's Linux screen-reader bridge (accesskit_unix,
-    # AT-SPI over D-Bus). The launcher ships for macOS only. Drop when accesskit moves off them.
+    # AT-SPI over D-Bus), so only in the Linux build. No advisory names a flaw in them. Drop
+    # when accesskit moves off them.
     { id = "RUSTSEC-2026-0370", reason = "zvariant: Linux accessibility bridge in accesskit_unix (eframe)" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: Linux accessibility bridge in accesskit_unix (eframe)" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: Linux accessibility bridge in accesskit_unix (eframe)" },

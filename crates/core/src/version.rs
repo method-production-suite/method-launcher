@@ -14,6 +14,13 @@ pub struct Version {
     pub pre: String,
 }
 
+/// A pre-release as semver writes it: dot-separated identifiers of ASCII letters, digits and
+/// hyphens, none empty. Nothing else, so a tag read from a redirect can't carry a `/` or a
+/// space into the download addresses it is built into.
+fn pre_release(pre: &str) -> bool {
+    pre.split('.').all(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+}
+
 impl Version {
     /// Parses `1.2.3`, `v1.2.3`, `1.2.3-beta.1` or `1.2.3+build`. `None` for anything else.
     pub fn parse(text: &str) -> Option<Version> {
@@ -21,7 +28,7 @@ impl Version {
         let text = text.strip_prefix('v').unwrap_or(text);
         let text = text.split('+').next()?;
         let (core, pre) = match text.split_once('-') {
-            Some((core, pre)) if !pre.is_empty() => (core, pre.to_string()),
+            Some((core, pre)) if pre_release(pre) => (core, pre.to_string()),
             Some(_) => return None,
             None => (text, String::new()),
         };
@@ -102,7 +109,23 @@ mod tests {
         assert_eq!(Version::parse("0.13.0"), Some(Version { major: 0, minor: 13, patch: 0, pre: String::new() }));
         assert_eq!(Version::parse("v1.2.3-beta.1").map(|v| v.pre), Some("beta.1".to_string()));
         assert_eq!(Version::parse("1.2.3+abc").map(|v| v.patch), Some(3));
-        for bad in ["", "1", "1.2", "1.2.3.4", "01.2.3", "1.2.x", "1.2.3-", "-1.2.3", "1..3"] {
+        assert_eq!(Version::parse("1.2.3-rc-1.x").map(|v| v.pre), Some("rc-1.x".to_string()));
+        for bad in [
+            "",
+            "1",
+            "1.2",
+            "1.2.3.4",
+            "01.2.3",
+            "1.2.x",
+            "1.2.3-",
+            "-1.2.3",
+            "1..3",
+            "1.2.3-a/../b",
+            "1.2.3-a b",
+            "1.2.3-a..b",
+            "1.2.3-.a",
+            "1.2.3-a%2F",
+        ] {
             assert_eq!(Version::parse(bad), None, "{bad}");
         }
     }
