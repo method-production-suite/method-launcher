@@ -43,6 +43,15 @@ Decided by the owner, 2026-10-18:
 
 ### Tests that need the owner's hands
 
+**The launcher's own update through an administrator (before the next release).** The
+updater now checks the new copy's code signature before it replaces the launcher, and when
+the Applications folder needs an administrator, root checks its own copy first. Tests cover
+the logic; MReview asks for one real run before any release ships it. On a Mac where
+`/Applications` needs an administrator's password: install a signed launcher there, let it
+find a newer signed one, choose Restart to Update, enter the password, and expect the new
+version to open. MOrg arranges the time; nothing is rehearsed or tagged on this updater until
+it has run.
+
 **Install and update on a real Linux machine (eventually).** Built and tested automatically;
 no one has run it on Linux yet. Download the launcher from the latest release
 (`Method-Launcher-linux-x86_64.AppImage` or the `.deb`), then:
