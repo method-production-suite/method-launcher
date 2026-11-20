@@ -145,8 +145,25 @@ impl Updates {
         let installed = self
             .updater
             .install_ready(&bundle, &|b: &Path, new: &Path| method_update::install::admin_swap(b, new, &names))
-            .map_err(|e| e.to_string())?;
-        method_update::restart::relaunch(&installed.bundle).map_err(|e| e.to_string())
+            .map_err(|e| install_failed_note(&e))?;
+        method_update::restart::relaunch(&installed.bundle)
+            .map_err(|e| format!("The update installed, but Method Launcher couldn't restart ({e}). Open it again."))
+    }
+}
+
+/// What the window says when Restart to Update didn't install. A code signature that isn't
+/// the suite's team (method-update checks it before the swap) won't pass on a second try, so
+/// it never says to try again.
+pub fn install_failed_note(error: &method_update::InstallError) -> String {
+    use method_update::codesign::SignatureError;
+    match error {
+        method_update::InstallError::Signature(SignatureError::RunningUnreadable { .. }) => {
+            "This copy of Method Launcher couldn't read its own signature, so the update wasn't installed. Download the new version from methodproduction.com.".to_string()
+        }
+        method_update::InstallError::Signature(_) => {
+            "This update isn't signed by the suite's developer, so it wasn't installed. Method Launcher is unchanged.".to_string()
+        }
+        e => format!("The update didn't install ({e}). It is still ready: Restart to Update tries again."),
     }
 }
 
@@ -187,6 +204,61 @@ mod tests {
         let config = update_config();
         assert_eq!(config.unavailable_reason(), None, "the key decodes and the endpoint is https");
         assert!(config.endpoint.starts_with("https://github.com/method-production-suite/method-launcher/"));
+    }
+
+    #[test]
+    fn a_refused_signature_says_so_plainly() {
+        use method_update::InstallError;
+        use method_update::codesign::SignatureError;
+        let other_team = InstallError::Signature(SignatureError::TeamMismatch { expected: "A".into(), found: Some("B".into()) });
+        assert_eq!(
+            install_failed_note(&other_team),
+            "This update isn't signed by the suite's developer, so it wasn't installed. Method Launcher is unchanged."
+        );
+        let invalid = InstallError::Signature(SignatureError::Invalid { team: "A".into(), detail: "x".into() });
+        assert!(!install_failed_note(&invalid).contains("tries again"), "a bad signature won't pass on a second try");
+        let unreadable = InstallError::Signature(SignatureError::RunningUnreadable { detail: "x".into() });
+        assert!(install_failed_note(&unreadable).ends_with("Download the new version from methodproduction.com."));
+        let busy = InstallError::Io("Could not move it".into());
+        assert_eq!(install_failed_note(&busy), "The update didn't install (Could not move it). It is still ready: Restart to Update tries again.");
+    }
+
+    /// The launcher builds its updater with `Updater::new` and a settings file, so the
+    /// high-water mark is kept beside it: once a version's download has passed its signature
+    /// check, a later offer of an older one is refused before anything is downloaded.
+    #[test]
+    fn an_older_offer_than_one_accepted_is_refused() {
+        let dir = std::env::temp_dir().join(format!("launcher-highwater-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join("updates.json");
+        let offer = |version: &str| method_update::Update {
+            current_version: "0.2.3".into(),
+            version: version.into(),
+            body: None,
+            date: None,
+            target: "darwin-aarch64".into(),
+            download_url: "https://github.com/method-production-suite/method-launcher/releases/download/x".into(),
+            signature: "s".into(),
+            raw_json: serde_json::Value::Null,
+        };
+        let updater = || Updater::new(update_config(), "0.2.3", Some(settings.clone()), Instant::now());
+        let ready = |version: &str| {
+            let u = updater();
+            u.check_with(true, || Ok(Some(offer(version))), |_| Ok(vec![1]));
+            u.status(None).phase
+        };
+        // 0.3.0 is offered and its download verifies (it is never installed).
+        assert_eq!(ready("0.3.0"), "ready");
+        assert!(dir.join("updates.high-water.json").is_file(), "kept beside updates.json");
+        // A later run, still on 0.2.3, is offered 0.2.9: refused, and nothing is downloaded.
+        let later = updater();
+        assert_eq!(later.check_with(true, || Ok(Some(offer("0.2.9"))), |_| -> Result<Vec<u8>, String> { panic!("downloaded") }), Some(Said::Failed));
+        assert!(later.status(None).message.unwrap_or_default().contains("0.3.0"));
+        // The same version again, or a newer one, still passes.
+        assert_eq!(ready("0.3.0"), "ready");
+        assert_eq!(ready("0.3.1"), "ready");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

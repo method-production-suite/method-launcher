@@ -939,10 +939,7 @@ impl eframe::App for Launcher {
                         if status.phase == "ready" && ui.add(accent_button(ui, "Restart to Update", LAUNCHER_ACCENT)).clicked() {
                             match self.updates.install_and_relaunch() {
                                 Ok(()) => std::process::exit(0),
-                                Err(e) => {
-                                    self.notice =
-                                        Some((format!("The update didn't install ({e}). It is still ready: Restart to Update tries again."), true))
-                                }
+                                Err(note) => self.notice = Some((note, true)),
                             }
                         }
                     });
