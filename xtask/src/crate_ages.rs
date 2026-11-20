@@ -52,8 +52,10 @@ for n, v in sorted(exceptions):
 "#;
 
 fn honoured(py: &str, exceptions: &Path, release: bool, tag: Option<&str>) -> Vec<String> {
+    // -B: loading the script as a module must not leave a __pycache__ in the repository.
     let out = Command::new(py)
         .arg("-I")
+        .arg("-B")
         .arg("-c")
         .arg(HONOURED)
         .arg(root().join("scripts/check-crate-ages.py"))

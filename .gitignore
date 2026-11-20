@@ -24,3 +24,7 @@ docs/KICKOFF.md
 
 # Rust
 /target
+
+# Python
+__pycache__/
+*.pyc
