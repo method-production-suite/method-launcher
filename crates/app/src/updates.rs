@@ -20,7 +20,7 @@ use method_update::{AppConfig, Said, Status, Updater, baked};
 const ENDPOINT: &str = "https://github.com/method-production-suite/method-launcher/releases/latest/download/latest.json";
 /// The minisign public key the releases are signed with (key ID E115E2CD9AEE0DF9), as the
 /// base64 of its key box. The private half lives with the release workflow's secrets and in
-/// 1Password ("Method Launcher updater key"); it is never in the repository.
+/// 1Password ("Method Launcher - Update signing key"); it is never in the repository.
 const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUxMTVFMkNEOUFFRTBERjkKUldUNURlNmF6ZUlWNFYrRFNDaHNVOG5Wd203ZlV3bU0xeUF4dzdML0lRRUxEQjJ4QlJkTytETlMK";
 
 /// The bundle as the installer names it.

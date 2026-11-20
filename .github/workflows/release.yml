@@ -26,8 +26,8 @@
 #                      there is no signing step; the setup is covered by SHA256SUMS and
 #                      its signature like every other file.
 #   Updates (macOS):   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the suite's
-#                      names; the launcher's own minisign key, "Method Launcher updater key" in
-#                      1Password, key ID E115E2CD9AEE0DF9; its public half is PUBKEY in
+#                      names; the launcher's own minisign key, "Method Launcher - Update
+#                      signing key" in 1Password, key ID E115E2CD9AEE0DF9; its public half is PUBKEY in
 #                      crates/app/src/updates.rs). With the key and a notarized build, the
 #                      release also carries the updater archive
 #                      Method-Launcher_<version>_universal.app.tar.gz, its .sig and latest.json,
@@ -42,6 +42,10 @@
 # real signing keys. Its bundles stay on the run as artifacts; delete them once it is green
 # (docs/RELEASING.md).
 # Every compile happens before any secret reaches the runner.
+#
+# The signing secrets live in the `release` environment, which deploys only from main and
+# from v* tags (the owner, 2026-11-20). Only the two jobs that read them, build and draft,
+# name it, so a run started from any other branch never reaches a key.
 #
 # Least privilege: only the draft job writes. First-party actions only, pinned to the suite's
 # full commit SHAs; no caches (release builds start clean). The two AppImage tools are
@@ -159,6 +163,8 @@ jobs:
   build:
     name: build (${{ matrix.name }})
     needs: check
+    # The signing secrets: Developer ID, notarisation and the update key.
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -444,6 +450,8 @@ jobs:
     # The only job with write access: it drafts the release with the notes and the
     # installers. Publishing the draft is left to a person.
     needs: [check, build]
+    # The update key, which signs SHA256SUMS.
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
