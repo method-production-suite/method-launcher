@@ -16,18 +16,23 @@ pub fn use_deb(chosen: bool, apt: bool, current: Option<&Path>, appimage: Option
     }
 }
 
-/// The privileged step, run by `pkexec /bin/sh -c INSTALL sh <download> <sha256>`. Everything
-/// root installs is checked by root: the download is copied into a fresh root-owned folder
-/// (mktemp makes it 0700), that copy is checked against the release's SHA-256, and apt
-/// installs that copy. So a process of the person's own can't swap the file between the
-/// launcher's check and the install. The paths and the hash arrive as arguments, never in the
-/// script's text. Its own exit codes: 3, the copy doesn't match; 4, it couldn't be copied.
+/// The privileged step, run by `pkexec /bin/sh -c INSTALL sh <download> <sha256> <package>`.
+/// Everything root installs is checked by root: the download is copied into a fresh
+/// root-owned folder (mktemp makes it 0700), that copy is checked against the release's
+/// SHA-256, its package name must be the Method app's (`method-<noun>`, the name it was asked
+/// for), and apt installs that copy. So a process of the person's own can't swap the file
+/// between the launcher's check and the install, and the password prompt, which says it is
+/// for a Method app, installs nothing else. The paths, the hash and the name arrive as
+/// arguments, never in the script's text. Its own exit codes: 3, the copy doesn't match; 4,
+/// it couldn't be copied; 5, it isn't the Method app's package.
 pub const INSTALL: &str = r#"set -eu
+printf '%s' "$3" | /usr/bin/grep -qxE 'method-[a-z]+' || exit 5
 dir=$(/bin/mktemp -d /tmp/method-launcher-deb.XXXXXXXX)
 trap '/bin/rm -rf "$dir"' EXIT
 /bin/cp -- "$1" "$dir/package.deb" || exit 4
 printf '%s  %s
 ' "$2" "$dir/package.deb" | /usr/bin/sha256sum --check --strict --quiet - || exit 3
+[ "$(/usr/bin/dpkg-deb --field "$dir/package.deb" Package)" = "$3" ] || exit 5
 /usr/bin/apt-get install -y -- "$dir/package.deb"
 "#;
 
@@ -35,16 +40,30 @@ printf '%s  %s
 /// file, with a polkit action that names it, so the password prompt says what it is for.
 pub const HELPER: &str = "/usr/libexec/method-launcher/install-deb";
 
-/// The arguments for `pkexec` that run [`INSTALL`] on `download`, which must match `sha256`:
-/// through [`HELPER`] when the launcher was installed as a package (`helper` says so), else
-/// through `/bin/sh -c`. `None` when the hash isn't one (64 hex digits), so nothing unchecked
-/// ever reaches root.
-pub fn pkexec_args(download: &Path, sha256: &str, helper: bool) -> Option<Vec<std::ffi::OsString>> {
+/// pkexec by its full path where it is, so a PATH of the person's own can't stand in for it.
+pub fn pkexec() -> &'static str {
+    if Path::new("/usr/bin/pkexec").is_file() { "/usr/bin/pkexec" } else { "pkexec" }
+}
+
+/// The arguments for `pkexec` that run [`INSTALL`] on `download`, which must match `sha256`
+/// and be the package `package`: through [`HELPER`] when the launcher was installed as a
+/// package (`helper` says so), else through `/bin/sh -c`. `None` when the hash isn't one (64
+/// hex digits) or the name isn't a Method app's (`method-<noun>`), so nothing unchecked ever
+/// reaches root.
+pub fn pkexec_args(download: &Path, sha256: &str, package: &str, helper: bool) -> Option<Vec<std::ffi::OsString>> {
     if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let (file, sha) = (download.as_os_str().to_owned(), sha256.to_ascii_lowercase().into());
-    Some(if helper { vec![HELPER.into(), file, sha] } else { vec!["/bin/sh".into(), "-c".into(), INSTALL.into(), "sh".into(), file, sha] })
+    let noun = package.strip_prefix("method-")?;
+    if noun.is_empty() || !noun.bytes().all(|b| b.is_ascii_lowercase()) {
+        return None;
+    }
+    let (file, sha, name) = (download.as_os_str().to_owned(), sha256.to_ascii_lowercase().into(), package.into());
+    Some(if helper {
+        vec![HELPER.into(), file, sha, name]
+    } else {
+        vec!["/bin/sh".into(), "-c".into(), INSTALL.into(), "sh".into(), file, sha, name]
+    })
 }
 
 /// What the privileged step exiting with `code` means (spec §8): 126 and 127 are pkexec's own,
@@ -55,6 +74,10 @@ pub fn result(app: &App, code: Option<i32>, stderr: &str) -> Result<(), InstallE
         Some(3) => Err(InstallError::new(
             "The download doesn't match the release's checksum, so it was deleted. Try again.",
             "the copy the administrator step made didn't match the release's SHA-256",
+        )),
+        Some(5) => Err(InstallError::new(
+            format!("The download isn't {}'s system package, so nothing was installed.", app.name),
+            "the package's name isn't the app's",
         )),
         Some(4) => Err(InstallError::new(
             format!("{}'s system package couldn't be installed. Nothing was changed.", app.name),
@@ -100,29 +123,35 @@ mod tests {
     #[test]
     fn root_checks_its_own_copy_before_apt_installs_it() {
         let sha = "a".repeat(64);
-        let args = pkexec_args(Path::new("/home/you/.cache/x/budget.deb"), &sha, false).unwrap();
+        let args = pkexec_args(Path::new("/home/you/.cache/x/budget.deb"), &sha, "method-budget", false).unwrap();
         assert_eq!(args[0], "/bin/sh");
         assert_eq!(args[1], "-c");
         assert_eq!(args[2], INSTALL);
         assert_eq!(args[4], "/home/you/.cache/x/budget.deb");
         assert_eq!(args[5], sha.as_str());
-        // In this order: copy into root's folder, check that copy, install that copy.
+        assert_eq!(args[6], "method-budget");
+        // In this order: copy into root's folder, check that copy and its name, install it.
         let copy = INSTALL.find("/bin/cp").unwrap();
         let check = INSTALL.find("sha256sum --check").unwrap();
+        let name = INSTALL.find("dpkg-deb --field").unwrap();
         let install = INSTALL.find("apt-get install").unwrap();
-        assert!(copy < check && check < install);
+        assert!(copy < check && check < name && name < install);
         assert!(INSTALL.contains(r#"apt-get install -y -- "$dir/package.deb""#), "apt installs the checked copy");
         assert!(!INSTALL.contains(r#"apt-get install -y -- "$1""#), "never the person's own file");
         // Nothing reaches root without a real hash.
-        assert!(pkexec_args(Path::new("/x.deb"), "abc", false).is_none());
-        assert!(pkexec_args(Path::new("/x.deb"), &format!("{}; rm -rf /", "a".repeat(52)), true).is_none());
+        assert!(pkexec_args(Path::new("/x.deb"), "abc", "method-budget", false).is_none());
+        assert!(pkexec_args(Path::new("/x.deb"), &format!("{}; rm -rf /", "a".repeat(52)), "method-budget", true).is_none());
+        // Nor any package but a Method app's.
+        for name in ["", "method-", "budget", "method-Budget", "method-budget; x", "method-budget-app", "openssh-server"] {
+            assert!(pkexec_args(Path::new("/x.deb"), &sha, name, false).is_none(), "{name}");
+        }
     }
 
     #[test]
     fn the_packaged_helper_is_the_same_step() {
         let sha = "b".repeat(64);
-        let args = pkexec_args(Path::new("/tmp/budget.deb"), &sha, true).unwrap();
-        assert_eq!(args, vec![std::ffi::OsString::from(HELPER), "/tmp/budget.deb".into(), sha.into()]);
+        let args = pkexec_args(Path::new("/tmp/budget.deb"), &sha, "method-budget", true).unwrap();
+        assert_eq!(args, vec![std::ffi::OsString::from(HELPER), "/tmp/budget.deb".into(), sha.into(), "method-budget".into()]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/linux");
         let helper = std::fs::read_to_string(root.join("install-deb")).unwrap();
         assert!(helper.starts_with("#!/bin/sh\n"));
@@ -133,7 +162,8 @@ mod tests {
     }
 
     /// The script itself, run unprivileged where `sh`, `mktemp`, `cp` and `sha256sum` are, with
-    /// apt swapped for `true`: a matching copy passes, a swapped one stops with 3.
+    /// apt swapped for `true` and dpkg-deb for a stand-in that names the package: a matching
+    /// copy of the right package passes, a swapped one stops with 3, another package with 5.
     #[cfg(target_os = "linux")]
     #[test]
     fn the_script_refuses_a_swapped_file() {
@@ -142,17 +172,24 @@ mod tests {
         let file = dir.join("budget.deb");
         std::fs::write(&file, b"package").unwrap();
         let good = crate::fetch::hash_file(&file).unwrap();
-        let script = INSTALL.replace("/usr/bin/apt-get install -y --", "true");
-        let run = |sha: &str| std::process::Command::new("/bin/sh").args(["-c", &script, "sh"]).arg(&file).arg(sha).status().unwrap().code();
-        assert_eq!(run(&good), Some(0));
+        let script = INSTALL
+            .replace("/usr/bin/apt-get install -y --", "true")
+            .replace(r#"/usr/bin/dpkg-deb --field "$dir/package.deb" Package"#, "echo method-budget");
+        let run = |sha: &str, name: &str| {
+            std::process::Command::new("/bin/sh").args(["-c", &script, "sh"]).arg(&file).arg(sha).arg(name).status().unwrap().code()
+        };
+        assert_eq!(run(&good, "method-budget"), Some(0));
+        assert_eq!(run(&good, "method-reader"), Some(5), "another app's name than the package's");
+        assert_eq!(run(&good, "openssh-server"), Some(5));
         std::fs::write(&file, b"swapped").unwrap();
-        assert_eq!(run(&good), Some(3));
+        assert_eq!(run(&good, "method-budget"), Some(3));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn reads_what_pkexec_and_apt_say() {
         assert!(result(budget(), Some(0), "").is_ok());
+        assert!(result(budget(), Some(5), "").is_err_and(|e| e.message.starts_with("The download isn't Method Budget's")));
         let cancelled = result(budget(), Some(126), "").unwrap_err();
         assert_eq!(cancelled.message, "Not installed. You can install the AppImage instead.");
         assert!(result(budget(), Some(127), "").is_err_and(|e| e.message.starts_with("Not installed.")));

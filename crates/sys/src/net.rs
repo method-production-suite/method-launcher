@@ -60,8 +60,9 @@ fn curl() -> PathBuf {
     return PathBuf::from("/usr/bin/curl");
     #[cfg(target_os = "windows")]
     return crate::env_path("SystemRoot").unwrap_or_else(|| PathBuf::from(r"C:\Windows")).join(r"System32\curl.exe");
+    // The system's own, by full path where it is, so a PATH of the person's own can't stand in.
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    return PathBuf::from("curl");
+    return ["/usr/bin/curl", "/bin/curl"].into_iter().map(PathBuf::from).find(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("curl"));
 }
 
 /// One request, no redirects followed: the status and the redirect target, with the body

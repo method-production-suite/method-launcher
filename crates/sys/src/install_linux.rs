@@ -91,10 +91,10 @@ fn install_deb(app: &App, stage: &dyn Fn(Stage)) -> Result<Installed, InstallErr
     let args = fetched
         .sha256
         .as_deref()
-        .and_then(|sha| crate::deb::pkexec_args(&fetched.file, sha, Path::new(crate::deb::HELPER).is_file()))
+        .and_then(|sha| crate::deb::pkexec_args(&fetched.file, sha, &app.package(), Path::new(crate::deb::HELPER).is_file()))
         .ok_or_else(|| fail("This release can't be checked yet, so it can't be installed from here.", "no SHA-256 for the .deb"))?;
     stage(Stage::Authorizing);
-    let out = Command::new("pkexec").args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).output();
+    let out = Command::new(crate::deb::pkexec()).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).output();
     drop(fetched);
     let out = out.map_err(|e| fail(format!("{}'s system package couldn't be installed. Nothing was changed.", app.name), e.to_string()))?;
     crate::deb::result(app, out.status.code(), &String::from_utf8_lossy(&out.stderr))?;
