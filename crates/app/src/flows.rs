@@ -92,7 +92,8 @@ pub fn updatable(apps: &[App], found: &[Found], latest: &[Latest], jobs: &[Job])
             let (Some(app), Some(found), Some(latest), Some(job)) = (apps.get(i), found.get(i), latest.get(i), jobs.get(i)) else {
                 return false;
             };
-            matches!(found, Found::Installed(_)) && matches!(primary(app, found, latest, job), Primary::Update(_) | Primary::Install { replacing: Some(_), .. })
+            matches!(found, Found::Installed(_))
+                && matches!(primary(app, found, latest, job), Primary::Update(_) | Primary::Install { replacing: Some(_), .. })
         })
         .collect()
 }
@@ -265,7 +266,8 @@ mod tests {
     #[test]
     fn update_all_takes_the_installed_apps_that_are_behind() {
         let release = |v: &str| Latest::Release(Release { version: v.into(), date: None, summary: None });
-        let found = [Found::Installed(installed("0.6.0")), Found::Installed(installed("1.2.0")), Found::Missing, Found::Installed(installed("0.8.0"))];
+        let found =
+            [Found::Installed(installed("0.6.0")), Found::Installed(installed("1.2.0")), Found::Missing, Found::Installed(installed("0.8.0"))];
         let latest = [release("0.7.0"), release("1.2.0"), release("0.8.0"), release("0.9.0")];
         let jobs = [Job::Idle, Job::Idle, Job::Idle, Job::Running(Stage::Finding)];
         let expected: &[usize] = if crate::state::installs_here() { &[0] } else { &[] };
@@ -299,7 +301,8 @@ mod tests {
     #[test]
     fn demo_opens_each_installed_app_on_its_sample() {
         // Storyteller missing, Reader running, Schedule opens, Budget fails to open.
-        let found = [Found::Missing, Found::Installed(installed("reader")), Found::Installed(installed("schedule")), Found::Installed(installed("budget"))];
+        let found =
+            [Found::Missing, Found::Installed(installed("reader")), Found::Installed(installed("schedule")), Found::Installed(installed("budget"))];
         let mut asked = Vec::new();
         let (note, failed) = demo(
             &BUILT_IN,

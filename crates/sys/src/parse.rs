@@ -211,9 +211,9 @@ pub fn appimage_staging(noun: &str, pid: u32) -> String {
 /// Whether a file in `~/Applications` is a staging copy left by an install that stopped
 /// (spec §4.5), so it may be cleaned up. Never an installed app.
 pub fn is_appimage_staging(name: &str) -> bool {
-    name.strip_prefix(".Method-").and_then(|rest| rest.split_once(".AppImage.installing-")).is_some_and(|(noun, pid)| {
-        !noun.is_empty() && !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit())
-    })
+    name.strip_prefix(".Method-")
+        .and_then(|rest| rest.split_once(".AppImage.installing-"))
+        .is_some_and(|(noun, pid)| !noun.is_empty() && !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The executable an uninstall entry points at (Windows, spec §4.6): its icon's file when it
