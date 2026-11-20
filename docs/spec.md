@@ -184,12 +184,13 @@ install, removes everything it made, and shows one plain sentence (§8).
    one name the launcher reads. Where the release also has `SHA256SUMS.minisig`, it must verify
    against the app's update key, built into the launcher (never read from the website's list),
    or nothing is installed: "This release's checksums aren't signed with Method Reader's key,
-   so nothing was installed." Method Reader's and Method Schedule's releases must have the
-   file, and the same sentence refuses one without it, because their release workflows fail
-   rather than publish unsigned (Method Schedule since v0.8.0). The other apps can't be
-   required yet, so a release of theirs with no signature installs on its checksums: Method
-   Budget has no signed release yet, and no Method Storyteller release has shipped since its
-   workflow began to fail without a signature. An app that changes its key needs
+   so nothing was installed." Every app's release must have the file, and the same sentence
+   refuses one without it, because each app's release workflow fails rather than publish
+   unsigned (Method Reader first; Method Schedule since v0.8.0, Method Storyteller since
+   v0.7.0, Method Budget since v0.9.0). A new app is required once a release of its has
+   shipped that way (`signature_required`); until then, a release of its with no signature
+   installs on its checksums. The weekly build checks each app's latest live release this
+   way against its built-in key. An app that changes its key needs
    a launcher release with the new key first. The signature covers the list, not the version:
    whoever can publish a release could republish an older signed list with its older
    installers, which verifies. That is a downgrade to a release the suite really made, not a
