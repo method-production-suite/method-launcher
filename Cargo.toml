@@ -19,11 +19,12 @@ eframe = { version = "0.37", default-features = false, features = ["default_font
 egui = "0.37"
 sha2 = "0.11"
 minisign-verify = "0.2"
-# method-libs: the suite's updater, pinned to one reviewed revision (bfc6441, method-libs#12:
-# the update's code signature is checked against the running app's team before the swap, and
-# an offer older than one already accepted is refused), so the launcher updates itself the way
-# the apps do (SUITE-STANDARDS.md §1).
-method-update = { git = "https://github.com/method-production-suite/method-libs", rev = "bfc6441a1015793e665aa59478b6a434fb915062" }
+# method-libs: the suite's updater, pinned to one reviewed revision (fa7d430, method-libs#14 on
+# #12: the update's code signature is checked against the running app's team before the swap;
+# an offer older than one already accepted is refused; and when an administrator swaps, root
+# prepares and checks its copy in a private folder and what it puts in place belongs to root),
+# so the launcher updates itself the way the apps do (SUITE-STANDARDS.md §1).
+method-update = { git = "https://github.com/method-production-suite/method-libs", rev = "fa7d430e17b56f0776b9bb64396cdc90e251230f" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
