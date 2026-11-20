@@ -84,10 +84,44 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked -p launcher-sys --lib live_ -- --ignored --nocapture
+  linux-install:
+    # A real install on Linux, every week whether or not main moved: the command line
+    # installs Method Reader and Method Budget as AppImages from their latest releases
+    # (fetched, checked against the signed checksums, staged and renamed into place), then
+    # Method Reader again over itself, the way an update runs. Headless: nothing is opened.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: FUSE, which an AppImage needs to run
+        run: sudo apt-get update && sudo apt-get install -y fuse3
+      - run: cargo build --locked -p launcher-cli
+      - name: Install, update, and check what is installed
+        run: |
+          set -euo pipefail
+          bin=target/debug/method-launcher
+          "$bin" install reader
+          "$bin" install budget
+          "$bin" install reader
+          "$bin" status | tee status.txt
+          for app in Reader Budget; do
+            slug="${app,,}"
+            test -x "$HOME/Applications/Method-$app.AppImage"
+            grep -E "^$slug +installed [0-9]+\.[0-9]+\.[0-9]+ at $HOME/Applications/Method-$app.AppImage$" status.txt
+            # The menu entry is named after the bundle id, which itself ends in .desktop.
+            test -s "$HOME/.local/share/applications/com.method$slug.desktop.desktop"
+          done
+          # No staging copy is left behind.
+          if ls -A "$HOME/Applications" | grep -q installing; then ls -la "$HOME/Applications"; exit 1; fi
   alert:
     # A scheduled run that fails opens an issue, or comments on the one already open, so a
     # failure nobody is watching for still gets seen (the owner, 2026-11-17).
-    needs: [changed, gates, live-signatures]
+    needs: [changed, gates, live-signatures, linux-install]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:

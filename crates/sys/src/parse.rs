@@ -184,6 +184,46 @@ pub fn on_path(path: &std::ffi::OsStr, tools: &[&str], exists: impl Fn(&std::pat
     std::env::split_paths(path).any(|dir| tools.iter().any(|tool| exists(&dir.join(tool))))
 }
 
+/// The version the launcher recorded for the AppImage at `path` (Linux, spec §4.4), or empty
+/// when it didn't install that file: one placed by hand, or moved since.
+pub fn recorded_version(record: &str, slug: &str, path: &Path) -> String {
+    installed_record(record).get(slug).filter(|(_, recorded)| Path::new(recorded) == path).map(|(version, _)| version.clone()).unwrap_or_default()
+}
+
+/// An app installed as its system package (Linux, spec §4.6), from where its binary is on the
+/// PATH and what `dpkg-query` says. The package can be installed with the binary not on this
+/// PATH; then the app is opened by name.
+pub fn package_install(binary: Option<PathBuf>, version: Option<String>, binary_name: &str) -> Option<launcher_core::platform::Installed> {
+    use launcher_core::platform::Installed;
+    match (binary, version) {
+        (Some(path), version) => Some(Installed { path, version: version.unwrap_or_default(), legacy: false }),
+        (None, Some(version)) => Some(Installed { path: PathBuf::from(binary_name), version, legacy: false }),
+        (None, None) => None,
+    }
+}
+
+/// The name an AppImage is copied to before it is renamed into place (Linux, spec §4.4):
+/// hidden, and marked with the process that wrote it.
+pub fn appimage_staging(noun: &str, pid: u32) -> String {
+    format!(".Method-{noun}.AppImage.installing-{pid}")
+}
+
+/// Whether a file in `~/Applications` is a staging copy left by an install that stopped
+/// (spec §4.5), so it may be cleaned up. Never an installed app.
+pub fn is_appimage_staging(name: &str) -> bool {
+    name.strip_prefix(".Method-")
+        .and_then(|rest| rest.split_once(".AppImage.installing-"))
+        .is_some_and(|(noun, pid)| !noun.is_empty() && !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The executable an uninstall entry points at (Windows, spec §4.6): its icon's file when it
+/// exists, otherwise `<binary>.exe` or `<name>.exe` in its install folder, whichever exists.
+pub fn windows_exe(entry: &RegEntry, binary: &str, name: &str, exists: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let from_icon = exe_from_icon(&entry.display_icon).map(PathBuf::from).filter(|p| exists(p));
+    let location = PathBuf::from(entry.install_location.trim_matches('"'));
+    from_icon.or_else(|| [format!("{binary}.exe"), format!("{name}.exe")].into_iter().map(|exe| location.join(exe)).find(|p| exists(p)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,5 +346,60 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Meth
         let present = |p: &std::path::Path| p == std::path::Path::new("/usr/bin/fusermount3");
         assert!(on_path(&path, &["fusermount", "fusermount3"], present));
         assert!(!on_path(&path, &["fusermount", "fusermount3"], |_| false));
+    }
+
+    #[test]
+    fn a_recorded_version_belongs_to_the_file_it_was_recorded_for() {
+        let record = with_installed("", "budget", "0.9.0", "/home/a/Applications/Method-Budget.AppImage");
+        let here = Path::new("/home/a/Applications/Method-Budget.AppImage");
+        assert_eq!(recorded_version(&record, "budget", here), "0.9.0");
+        // Moved or replaced by hand: the launcher doesn't know its version.
+        assert_eq!(recorded_version(&record, "budget", Path::new("/home/a/Method-Budget.AppImage")), "");
+        assert_eq!(recorded_version(&record, "reader", here), "");
+        assert_eq!(recorded_version("not json", "budget", here), "");
+    }
+
+    #[test]
+    fn a_package_install_is_found_by_its_binary_or_its_package() {
+        let bin = PathBuf::from("/usr/bin/method-budget-app");
+        let found = package_install(Some(bin.clone()), Some("0.9.0".into()), "method-budget-app").unwrap();
+        assert_eq!((found.path, found.version), (bin.clone(), "0.9.0".to_string()));
+        // On the PATH but not a package (built by hand): no version.
+        assert_eq!(package_install(Some(bin.clone()), None, "method-budget-app").unwrap().version, "");
+        // A package whose binary isn't on this PATH opens by name.
+        assert_eq!(package_install(None, Some("0.9.0".into()), "method-budget-app").unwrap().path, PathBuf::from("method-budget-app"));
+        assert!(package_install(None, None, "method-budget-app").is_none());
+    }
+
+    #[test]
+    fn only_staging_copies_are_cleaned_up() {
+        let staging = appimage_staging("Budget", 4242);
+        assert_eq!(staging, ".Method-Budget.AppImage.installing-4242");
+        assert!(is_appimage_staging(&staging));
+        for kept in [
+            "Method-Budget.AppImage",
+            ".Method-Budget.AppImage",
+            ".Method-.AppImage.installing-1",
+            ".Method-Budget.AppImage.installing-",
+            ".Method-Budget.AppImage.installing-12x",
+            ".Other-Budget.AppImage.installing-1",
+            "Method-Budget.AppImage.installing-1",
+        ] {
+            assert!(!is_appimage_staging(kept), "{kept}");
+        }
+    }
+
+    #[test]
+    fn windows_opens_the_icon_s_file_then_the_install_folder_s() {
+        let entry = reg_uninstall(REG, "Method Budget").unwrap();
+        let icon = PathBuf::from(r"C:\Users\a\AppData\Local\Method Budget\method-budget-app.exe");
+        let folder = PathBuf::from(r"C:\Users\a\AppData\Local\Method Budget");
+        assert_eq!(windows_exe(&entry, "method-budget-app", "Method Budget", |_| true), Some(icon));
+        // The icon's file is gone: the folder's binary, then the app's name.
+        let by_binary = folder.join("method-budget-app.exe");
+        let by_name = folder.join("Method Budget.exe");
+        assert_eq!(windows_exe(&entry, "method-budget-app", "Method Budget", |p| p == by_binary), Some(by_binary.clone()));
+        assert_eq!(windows_exe(&entry, "method-budget-app", "Method Budget", |p| p == by_name), Some(by_name.clone()));
+        assert_eq!(windows_exe(&entry, "method-budget-app", "Method Budget", |_| false), None);
     }
 }

@@ -2,7 +2,7 @@
 //! `method-<noun>` with its binary `method-<noun>-app` on the PATH (docs/spec.md §4.6). It is
 //! opened by running that file (§6).
 
-use crate::parse::{dpkg_version, find_on_path};
+use crate::parse::{dpkg_version, find_on_path, package_install, recorded_version};
 use crate::{env_path, output, run, start};
 use launcher_core::catalog::App;
 use launcher_core::platform::{Installed, Opened};
@@ -18,21 +18,13 @@ pub fn locate(app: &App) -> Option<Installed> {
     if let Some(path) = appimage_path(app).filter(|p| p.is_file()) {
         // The version the launcher installed (spec §4.4); unknown for one placed by hand.
         let record = crate::install_linux::record_path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
-        let version = crate::parse::installed_record(&record)
-            .get(app.slug)
-            .filter(|(_, recorded)| std::path::Path::new(recorded) == path)
-            .map(|(version, _)| version.clone())
-            .unwrap_or_default();
+        let version = recorded_version(&record, app.slug, &path);
         return Some(Installed { path, version, legacy: false });
     }
     let path_var = std::env::var("PATH").unwrap_or_default();
     let binary = find_on_path(&app.binary(), &path_var, ':', &[]);
     let version = output("dpkg-query", &["-W", "-f", "${Status}\t${Version}", &app.package()]).and_then(|out| dpkg_version(&out));
-    match (binary, version) {
-        (Some(path), version) => Some(Installed { path, version: version.unwrap_or_default(), legacy: false }),
-        (None, Some(version)) => Some(Installed { path: PathBuf::from(app.binary()), version, legacy: false }),
-        (None, None) => None,
-    }
+    package_install(binary, version, &app.binary())
 }
 
 pub fn is_running(_app: &App, installed: &Installed) -> bool {

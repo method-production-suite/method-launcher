@@ -3,6 +3,7 @@
 //! button: Open, Update, or Install. Installing and updating run the checked install of
 //! launcher-sys (spec §4) off the interface thread, one at a time.
 
+mod flows;
 mod help;
 mod images;
 mod state;
@@ -15,7 +16,7 @@ mod screens;
 use images::{WINDOW_ICON, WORDMARK, WORDMARK_DARK, decode_png, mark_png, trim};
 use launcher_core::catalog::App;
 use launcher_core::platform::Folders;
-use launcher_core::platform::{Installed, Launch, Locate, Opened};
+use launcher_core::platform::{Installed, Launch, Locate};
 use launcher_sys::{InstallError, Recent, Stage, System};
 use state::{Badge, Found, Job, Latest, Primary, installs_here, primary, primary_label, status};
 use std::collections::{HashSet, VecDeque};
@@ -266,11 +267,8 @@ impl Launcher {
                             icon.clone().map(|image| ctx.load_texture(format!("icon-{}", app.slug), image, egui::TextureOptions::LINEAR))
                         })
                         .collect();
-                    let mut recent: Vec<(usize, Recent)> =
-                        found.iter().enumerate().flat_map(|(index, (_, _, files))| files.iter().cloned().map(move |r| (index, r))).collect();
-                    recent.sort_by_key(|(_, r)| std::cmp::Reverse(r.opened));
-                    recent.truncate(RECENT_SHOWN);
-                    self.recent = recent;
+                    let files: Vec<Vec<Recent>> = found.iter().map(|(_, _, files)| files.clone()).collect();
+                    self.recent = flows::newest_files(&files, RECENT_SHOWN);
                     self.found = found.into_iter().map(|(f, _, _)| f.map_or(Found::Missing, Found::Installed)).collect();
                     self.scanning = false;
                 }
@@ -285,16 +283,10 @@ impl Launcher {
                 Event::Stage(index, stage) => set(&mut self.jobs, index, Job::Running(stage)),
                 Event::Done(index, result) => {
                     let app = self.apps.get(index).map_or("The app", |a| a.name);
-                    match result {
-                        Ok(installed) => {
-                            set(&mut self.jobs, index, Job::Idle);
-                            self.notice = Some((format!("{app} {} is installed.", installed.version), false));
-                        }
-                        Err(error) if error.cancelled => {
-                            set(&mut self.jobs, index, Job::Idle);
-                            self.notice = Some((format!("Cancelled. {app} wasn't changed."), false));
-                        }
-                        Err(error) => set(&mut self.jobs, index, Job::Failed(error)),
+                    let (job, note) = flows::finished(app, result);
+                    set(&mut self.jobs, index, job);
+                    if let Some(note) = note {
+                        self.notice = Some((note, false));
                     }
                     self.rescan(ctx);
                     if let Some((next, quit)) = self.queue.pop_front() {
@@ -329,19 +321,12 @@ impl Launcher {
     }
 
     fn busy(&self) -> bool {
-        self.jobs.iter().any(|j| matches!(j, Job::Running(_)))
+        flows::busy(&self.jobs)
     }
 
     /// Installs or updates these apps, first asking to quit any that are open.
     fn request_install(&mut self, ctx: &egui::Context, batch: Vec<usize>) {
-        let running: Vec<usize> = batch
-            .iter()
-            .copied()
-            .filter(|&i| match (self.apps.get(i), self.found.get(i)) {
-                (Some(app), Some(Found::Installed(installed))) => System.is_running(app, installed),
-                _ => false,
-            })
-            .collect();
+        let running = flows::open_now(&batch, self.apps, &self.found, |app, installed| System.is_running(app, installed));
         if running.is_empty() {
             for index in batch {
                 self.install(ctx, index, false);
@@ -354,45 +339,21 @@ impl Launcher {
     /// Installs or updates the app at `index`, or queues it behind the one running.
     fn install(&mut self, ctx: &egui::Context, index: usize, quit: bool) {
         self.details.remove(&index);
-        if self.busy() || !self.queue.is_empty() {
-            set(&mut self.jobs, index, Job::Waiting);
-            self.queue.push_back((index, quit));
-        } else {
+        if flows::enqueue(&mut self.jobs, &mut self.queue, index, quit) {
             self.start_install(ctx, index, quit);
         }
     }
 
     /// The apps whose main button is Update (or Install over an earlier name): Update all.
     fn updatable(&self) -> Vec<usize> {
-        (0..self.apps.len())
-            .filter(|&i| {
-                let (Some(app), Some(found), Some(latest), Some(job)) = (self.apps.get(i), self.found.get(i), self.latest.get(i), self.jobs.get(i))
-                else {
-                    return false;
-                };
-                matches!(found, Found::Installed(_))
-                    && matches!(primary(app, found, latest, job), Primary::Update(_) | Primary::Install { replacing: Some(_), .. })
-            })
-            .collect()
+        flows::updatable(self.apps, &self.found, &self.latest, &self.jobs)
     }
 
     /// The question before quitting open apps (spec §5.1).
     fn confirm_quit(&mut self, ctx: &egui::Context) {
         let Some((batch, running)) = self.confirm.clone() else { return };
         let names: Vec<&str> = running.iter().filter_map(|&i| self.apps.get(i).map(|a| a.name)).collect();
-        let (title, body) = match names.as_slice() {
-            [one] => (
-                format!("Quit {one} and update it?"),
-                format!("{one} is open. Method Launcher will ask it to quit, so it can ask you about anything unsaved, then update it."),
-            ),
-            _ => (
-                "Quit the open apps and update them?".to_string(),
-                format!(
-                    "{} are open. Method Launcher will ask each one to quit, so it can ask you about anything unsaved, then update it.",
-                    names.join(" and ")
-                ),
-            ),
-        };
+        let (title, body) = flows::quit_question(&names);
         let mut answer = None;
         egui::Modal::new(egui::Id::unique("confirm-quit")).show(ctx, |ui| {
             ui.set_max_width(420.0);
@@ -424,10 +385,9 @@ impl Launcher {
     /// Cancel on a card: a waiting install leaves the queue; a running one stops if it is still
     /// finding, downloading or checking (spec §4.1).
     fn cancel(&mut self, index: usize) {
-        if matches!(self.jobs.get(index), Some(Job::Waiting)) {
-            self.queue.retain(|(i, _)| *i != index);
-            set(&mut self.jobs, index, Job::Idle);
-        } else if let Some(app) = self.apps.get(index) {
+        if !flows::cancel_waiting(&mut self.jobs, &mut self.queue, index)
+            && let Some(app) = self.apps.get(index)
+        {
             System.cancel(app);
         }
     }
@@ -453,51 +413,19 @@ impl Launcher {
     }
 
     fn open(&mut self, app: &App, installed: &Installed) {
-        let result = System.open_app(app, installed, &[]).map(|opened| match opened {
-            Opened::Started => format!("Opening {}.", app.name),
-            Opened::BroughtForward => format!("{} is already open.", app.name),
-            Opened::AlreadyRunning => format!("{} is already open. Switch to it from the taskbar.", app.name),
-        });
-        self.notice = Some(match result {
-            Ok(text) => (text, false),
-            Err(e) => (format!("{} couldn't be opened. {e}", app.name), true),
-        });
+        self.notice = Some(flows::opened_note(app.name, System.open_app(app, installed, &[])));
     }
 
     /// Opens one app on its Field Station sample (spec §7). `--open-sample` only works as the app
     /// starts, so an app already running is brought forward, and the note says what to choose.
     fn open_sample(&mut self, app: &App, installed: &Installed) {
         let running = System.is_running(app, installed);
-        let arguments: &[&str] = if running { &[] } else { &["--open-sample"] };
-        self.notice = Some(match System.open_app(app, installed, arguments) {
-            Ok(_) if running => (format!("{} is open. Choose Help > Open Sample.", app.name), false),
-            Ok(_) => (format!("Opening the Field Station sample in {}.", app.name), false),
-            Err(e) => (format!("{} couldn't be opened. {e}", app.name), true),
-        });
+        self.notice = Some(flows::sample_note(app.name, running, System.open_app(app, installed, flows::sample_arguments(running))));
     }
 
-    /// Opens every installed app on its Field Station sample (the owner, 2026-10-19), with
-    /// `--open-sample` for each app that isn't running (SUITE-STANDARDS.md §2). A running app
-    /// is brought forward and the note says how to open the sample there; apps that aren't
-    /// installed are named as skipped. No app's settings change.
+    /// Demo the suite: every installed app on its Field Station sample (flows::demo).
     fn demo(&mut self) {
-        let (mut opened, mut open_already, mut skipped, mut failed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for (app, found) in self.apps.iter().zip(&self.found) {
-            let Found::Installed(installed) = found else {
-                skipped.push(short_name(app));
-                continue;
-            };
-            if System.is_running(app, installed) {
-                let _ = System.open_app(app, installed, &[]);
-                open_already.push(short_name(app));
-                continue;
-            }
-            match System.open_app(app, installed, &["--open-sample"]) {
-                Ok(_) => opened.push(short_name(app)),
-                Err(_) => failed.push(short_name(app)),
-            }
-        }
-        self.notice = Some((demo_note(&opened, &open_already, &skipped, &failed), !failed.is_empty()));
+        self.notice = Some(flows::demo(self.apps, &self.found, |app, i| System.is_running(app, i), |app, i, args| System.open_app(app, i, args)));
     }
 
     fn link(&mut self, url: &str) {
@@ -1112,39 +1040,6 @@ fn link(ui: &mut egui::Ui, text: &str) -> bool {
     response.clicked()
 }
 
-/// "Method Budget" as "Budget", for notes that name several apps.
-fn short_name(app: &App) -> &'static str {
-    app.name.strip_prefix("Method ").unwrap_or(app.name)
-}
-
-/// "Reader and Budget" or "Reader, Schedule and Budget".
-fn and_list(names: &[&str]) -> String {
-    match names {
-        [] => String::new(),
-        [one] => (*one).to_string(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
-/// The one-line note after Demo the suite.
-fn demo_note(opened: &[&str], open_already: &[&str], skipped: &[&str], failed: &[&str]) -> String {
-    let mut parts = Vec::new();
-    if !opened.is_empty() {
-        parts.push(format!("Opening the Field Station sample in {}.", and_list(opened)));
-    }
-    for name in open_already {
-        parts.push(format!("{name} is open: use Help > Open Sample."));
-    }
-    if !failed.is_empty() {
-        parts.push(format!("{} couldn't be opened.", and_list(failed)));
-    }
-    if !skipped.is_empty() {
-        let verb = if skipped.len() == 1 { "isn't" } else { "aren't" };
-        parts.push(format!("Skipped {}, which {verb} installed.", and_list(skipped)));
-    }
-    parts.join(" ")
-}
-
 /// Each app's mark as a texture; an app the launcher has no mark for draws its accent.
 fn load_marks(ctx: &egui::Context, apps: &[App]) -> Vec<Option<egui::TextureHandle>> {
     apps.iter()
@@ -1263,22 +1158,6 @@ fn ago(at: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_demo_note_names_every_app() {
-        assert_eq!(
-            demo_note(&["Reader", "Schedule"], &["Budget"], &["Storyteller"], &[]),
-            "Opening the Field Station sample in Reader and Schedule. Budget is open: use Help > Open Sample. Skipped Storyteller, which isn't installed."
-        );
-        assert_eq!(
-            demo_note(&["Storyteller", "Reader", "Schedule", "Budget"], &[], &[], &[]),
-            "Opening the Field Station sample in Storyteller, Reader, Schedule and Budget."
-        );
-        assert_eq!(
-            demo_note(&[], &[], &["Storyteller", "Schedule"], &["Reader"]),
-            "Reader couldn't be opened. Skipped Storyteller and Schedule, which aren't installed."
-        );
-    }
 
     #[test]
     fn days_read_as_dates() {
