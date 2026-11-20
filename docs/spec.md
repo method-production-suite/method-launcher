@@ -185,7 +185,8 @@ install, removes everything it made, and shows one plain sentence (§8).
    against the app's update key, built into the launcher (never read from the website's list),
    or nothing is installed: "This release's checksums aren't signed with Method Reader's key,
    so nothing was installed." Every app's release must have the file, and the same sentence
-   refuses one without it, because each app's release workflow fails rather than publish
+   refuses one without it, or without `SHA256SUMS` at all (on macOS too, where Apple's checks
+   would otherwise be the only ones), because each app's release workflow fails rather than publish
    unsigned (Method Reader first; Method Schedule since v0.8.0, Method Storyteller since
    v0.7.0, Method Budget since v0.9.0). A new app is required once a release of its has
    shipped that way (`signature_required`); until then, a release of its with no signature
