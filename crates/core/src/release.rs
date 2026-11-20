@@ -8,7 +8,10 @@ use crate::version::Version;
 pub fn tag_from_location(location: &str) -> Option<String> {
     let tag = location.trim().rsplit_once("/releases/tag/")?.1;
     let tag = tag.split(['?', '#']).next()?;
-    (tag.starts_with('v') && Version::parse(tag).is_some()).then(|| tag.to_string())
+    // The tag goes into download addresses: letters, digits, dots and hyphens only (no build
+    // metadata, which a suite tag never has).
+    let plain = tag.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    (plain && tag.starts_with('v') && Version::parse(tag).is_some()).then(|| tag.to_string())
 }
 
 /// The `version` field of a release manifest (`latest.json`), if it is a version.
@@ -90,6 +93,9 @@ mod tests {
         assert_eq!(tag_from_location(&format!("{base}v0.5.0")).as_deref(), Some("v0.5.0"));
         assert_eq!(tag_from_location(&format!("{base}v1.2.3-beta.1\r\n")).as_deref(), Some("v1.2.3-beta.1"));
         assert_eq!(tag_from_location(&format!("{base}nightly")), None);
+        for odd in ["v1.2.3+a/b", "v1.2.3-a/../b", "v1.2.3%2F", "v1.2.3-a b", "v1.2.3+build"] {
+            assert_eq!(tag_from_location(&format!("{base}{odd}")), None, "{odd}");
+        }
         assert_eq!(tag_from_location("https://github.com/method-production-suite/method-budget/releases"), None);
     }
 
