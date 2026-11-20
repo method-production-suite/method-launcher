@@ -109,21 +109,8 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     let cancellable = Cancellable::new(app.slug);
 
     stage(Stage::Finding);
-    let location = net::redirect_of(&app.latest_url(), &scratch(app, "redirect")?).map_err(|e| match e {
-        NetError::NotFound => fail(format!("{} has no release yet.", app.name), e.to_string()),
-        e => net_fail(app, &e),
-    })?;
-    let tag = tag_from_location(&location).ok_or_else(|| fail("The latest release isn't what we expected.", location.clone()))?;
-
-    let expected = match net::fetch_text(&app.asset_url(&tag, checksums::FILE), &scratch(app, checksums::FILE)?) {
-        Ok(sums) => {
-            let signature = net::fetch_text(&app.asset_url(&tag, checksums::SIGNATURE), &scratch(app, checksums::SIGNATURE)?);
-            check_signature(app, &tag, &sums, signature)?;
-            checksums::lookup(&sums, &file)
-        }
-        Err(NetError::NotFound) => None,
-        Err(e) => return Err(net_fail(app, &e)),
-    };
+    let (tag, sums) = latest_checked_sums(app)?;
+    let expected = sums.and_then(|sums| checksums::lookup(&sums, &file));
     cancellable.check()?;
     if require_checksum && expected.is_none() {
         return Err(fail("This release can't be checked yet, so it can't be installed from here.", format!("{tag} lists no checksum for {file}"))
@@ -156,6 +143,26 @@ pub fn fetch_verified(app: &App, kind: Kind, require_checksum: bool, stage: &dyn
     }
     cancellable.check()?;
     Ok(fetched)
+}
+
+/// The latest release's tag and its checksum list, with the list's signature checked (spec
+/// §4.1 step 2). The list is `None` for a release that has none.
+fn latest_checked_sums(app: &App) -> Result<(String, Option<String>), InstallError> {
+    let location = net::redirect_of(&app.latest_url(), &scratch(app, "redirect")?).map_err(|e| match e {
+        NetError::NotFound => fail(format!("{} has no release yet.", app.name), e.to_string()),
+        e => net_fail(app, &e),
+    })?;
+    let tag = tag_from_location(&location).ok_or_else(|| fail("The latest release isn't what we expected.", location.clone()))?;
+    let sums = match net::fetch_text(&app.asset_url(&tag, checksums::FILE), &scratch(app, checksums::FILE)?) {
+        Ok(sums) => {
+            let signature = net::fetch_text(&app.asset_url(&tag, checksums::SIGNATURE), &scratch(app, checksums::SIGNATURE)?);
+            check_signature(app, &tag, &sums, signature)?;
+            Some(sums)
+        }
+        Err(NetError::NotFound) => None,
+        Err(e) => return Err(net_fail(app, &e)),
+    };
+    Ok((tag, sums))
 }
 
 /// Checks a release's checksum list against its signature, when the app's key is built in. A
@@ -207,10 +214,11 @@ mod tests {
         let signature = include_str!("../../core/fixtures/reader-1.1.0.minisig");
         assert!(check_signature(reader, "v1.1.0", sums, Ok(signature.to_string())).is_ok());
         // An app that must sign is refused without a signature; one that doesn't sign yet still
-        // installs on its checksums.
+        // installs on its checksums. Every built-in app must sign now, so a new one is made up.
         let missing = check_signature(reader, "v1.1.0", sums, Err(NetError::NotFound)).expect_err("reader must sign");
         assert_eq!(missing.message, "This release's checksums aren't signed with Method Reader's key, so nothing was installed.");
-        assert!(check_signature(budget(), "v0.8.1", sums, Err(NetError::NotFound)).is_ok());
+        let unsigned = launcher_core::catalog::App { signature_required: false, ..*reader };
+        assert!(check_signature(&unsigned, "v1.1.0", sums, Err(NetError::NotFound)).is_ok());
         // A list changed after signing, or signed by another app's key, stops the install.
         let tampered = sums.replacen('a', "b", 1);
         let refused = check_signature(reader, "v1.1.0", &tampered, Ok(signature.to_string())).expect_err("tampered");
@@ -218,6 +226,20 @@ mod tests {
         assert!(check_signature(budget(), "v1.1.0", sums, Ok(signature.to_string())).is_err());
         // Not being able to ask isn't the same as there being no signature.
         assert!(check_signature(reader, "v1.1.0", sums, Err(NetError::Status(502))).is_err());
+    }
+
+    /// Each app's latest published release, live, through the same steps an install takes:
+    /// it has checksums, and they are signed with that app's built-in key. A key change or a
+    /// broken signature shows up here before anyone's install is refused. weekly.yml runs it.
+    #[test]
+    #[ignore = "network: weekly.yml runs it with --ignored"]
+    fn live_releases_are_signed_with_their_apps_keys() {
+        for app in launcher_core::catalog::BUILT_IN.iter().filter(|a| a.released) {
+            let (tag, sums) = latest_checked_sums(app).unwrap_or_else(|e| panic!("{}: {} ({})", app.name, e.message, e.details));
+            assert!(sums.is_some(), "{} {tag} has no {}", app.name, checksums::FILE);
+            assert!(app.signature_required, "{} {tag} is signed live: require it in the catalog", app.name);
+            println!("{} {tag}: signed with its own key", app.name);
+        }
     }
 
     #[test]

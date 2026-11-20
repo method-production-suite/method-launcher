@@ -139,9 +139,8 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#AE3D56", "#EE8DA2"),
         legacy: None,
         update_key: Some("RWT7lXoPI+LQxEpI0no0N8iZR348dKWkopi6fgEZmM1LglD43cG7bs76"),
-        // Its release workflow now fails without a signature, but no release has shipped under
-        // that yet.
-        signature_required: false,
+        // v0.7.0 shipped signed, and its release workflow fails rather than publish unsigned.
+        signature_required: true,
         sample_since: Some("0.2.0"),
     },
     App {
@@ -185,7 +184,8 @@ pub const BUILT_IN: [App; 4] = [
         accent: ("#0E7468", "#2CC7B2"),
         legacy: None,
         update_key: Some("RWSmu9+JiWrSzAKDX6MEwP1YNrXotSjHhH8Lly4SJEAgkFU4iU1FKYtn"),
-        signature_required: false,
+        // v0.9.0 shipped signed, and its release workflow fails rather than publish unsigned.
+        signature_required: true,
         sample_since: Some("0.6.0"),
     },
 ];

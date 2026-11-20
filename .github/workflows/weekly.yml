@@ -68,10 +68,26 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask ci
+  live-signatures:
+    # Every week, whether or not main moved: each app's latest release, fetched the way an
+    # install fetches it, must carry SHA256SUMS signed with that app's key built into the
+    # launcher. The apps release on their own schedule, so a key change or a broken
+    # signature shows up here before anyone's install is refused.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --locked -p launcher-sys --lib live_ -- --ignored --nocapture
   alert:
     # A scheduled run that fails opens an issue, or comments on the one already open, so a
     # failure nobody is watching for still gets seen (the owner, 2026-11-17).
-    needs: [changed, gates]
+    needs: [changed, gates, live-signatures]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
