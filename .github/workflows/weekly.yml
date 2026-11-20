@@ -93,6 +93,7 @@ jobs:
           "$bin" install budget
           "$bin" install reader
           "$bin" status | tee status.txt
+          echo "XDG_DATA_HOME=${XDG_DATA_HOME:-}"; find "$HOME/.local/share" "${XDG_DATA_HOME:-/nonexistent}" -name 'com.method*' 2>/dev/null || true
           for app in Reader Budget; do
             slug="${app,,}"
             test -x "$HOME/Applications/Method-$app.AppImage"
