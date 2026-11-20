@@ -159,10 +159,27 @@ fn latest_checked_sums(app: &App) -> Result<(String, Option<String>), InstallErr
             check_signature(app, &tag, &sums, signature)?;
             Some(sums)
         }
-        Err(NetError::NotFound) => None,
+        Err(NetError::NotFound) => {
+            no_checksums(app, &tag)?;
+            None
+        }
         Err(e) => return Err(net_fail(app, &e)),
     };
     Ok((tag, sums))
+}
+
+/// A release with no checksum list. An app that must sign is refused on every system, as a
+/// missing signature is: without the list there is nothing for the signature to cover. Any
+/// other app goes on to its system's own checks (spec §4.1 step 2).
+fn no_checksums(app: &App, tag: &str) -> Result<(), InstallError> {
+    if app.update_key.is_some() && app.signature_required {
+        return Err(fail(
+            format!("This release's checksums aren't signed with {}'s key, so nothing was installed.", app.name),
+            format!("{tag}: {} is missing", checksums::FILE),
+        )
+        .with_link("Open the release page", release_page(app, tag)));
+    }
+    Ok(())
 }
 
 /// Checks a release's checksum list against its signature, when the app's key is built in. A
@@ -224,6 +241,11 @@ mod tests {
         let refused = check_signature(reader, "v1.1.0", &tampered, Ok(signature.to_string())).expect_err("tampered");
         assert_eq!(refused.message, "This release's checksums aren't signed with Method Reader's key, so nothing was installed.");
         assert!(check_signature(budget(), "v1.1.0", sums, Ok(signature.to_string())).is_err());
+        // No checksum list at all: refused for an app that must sign, on every system.
+        let none = no_checksums(reader, "v1.1.0").expect_err("reader must sign");
+        assert_eq!(none.message, "This release's checksums aren't signed with Method Reader's key, so nothing was installed.");
+        assert_eq!(none.details, "v1.1.0: SHA256SUMS is missing");
+        assert!(no_checksums(&unsigned, "v1.1.0").is_ok());
         // Not being able to ask isn't the same as there being no signature.
         assert!(check_signature(reader, "v1.1.0", sums, Err(NetError::Status(502))).is_err());
     }
