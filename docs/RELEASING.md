@@ -35,8 +35,9 @@ The launcher's own minisign key, key ID E115E2CD9AEE0DF9.
 - **Public half:** `PUBKEY` in `crates/app/src/updates.rs`, the one place it lives in the
   repository. Installed launchers refuse any update not signed by it, so a new key means a
   release with the new `PUBKEY` first.
-- **Private half and its password:** 1Password, "Method Launcher updater key", and the
-  repository secrets `TAURI_SIGNING_PRIVATE_KEY` (the base64 of the secret key box) and
+- **Private half and its password:** 1Password, "Method Launcher - Update signing key" (with
+  the public key and key ID), and the `release` environment's secrets
+  `TAURI_SIGNING_PRIVATE_KEY` (the base64 of the secret key box) and
   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the suite's secret names). Never in the repository,
   an issue, a log or a chat.
 - **Made with:** `cargo xtask new-update-key --out-dir <folder outside the repository>`. It
