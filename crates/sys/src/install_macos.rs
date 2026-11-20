@@ -25,6 +25,7 @@ use std::time::Duration;
 
 const OSASCRIPT: &str = "/usr/bin/osascript";
 const CHOWN: &str = "/usr/sbin/chown";
+const MKTEMP: &str = "/usr/bin/mktemp";
 
 /// Runs a tool, returning its status and what it wrote to stdout and stderr together.
 fn tool(program: &str, args: &[&str]) -> Result<(bool, String), String> {
@@ -288,28 +289,32 @@ const ADMIN_UNVERIFIED: i32 = 5;
 /// administrator still writable by that account, with no password.
 const ADMIN_OWNER: &str = "root:wheel";
 
-/// The shell script the administrator step runs: copy into the staging name, give the copy to
-/// root at once (until then its files are the person's own, and a process of theirs could
-/// change them after a check), check that copy as root (the same signature and notarisation
-/// checks as [`verify_bundle`]), and only then swap it in. A copy that can't be given to root,
-/// or that fails a check, is removed. A copy that fails is removed and nothing else changes, so what root puts in
-/// place is what root checked, whatever happened to the mounted image after the launcher's
-/// own check.
+/// The shell script the administrator step runs. Root makes a fresh folder beside the
+/// destination with `mktemp -d` (its own, mode 700), copies the app into it, gives the copy to
+/// root, checks it there (the same signature and notarisation checks as [`verify_bundle`]),
+/// and only then moves it out into place. The folder is removed on every path, by a trap. A
+/// copy that can't be given to root, or that fails a check, exits [`ADMIN_UNVERIFIED`] with
+/// nothing moved.
 fn admin_script(source: &Path, staging: &Path, dest: &Path, replace_dest: bool, elsewhere: Option<&Path>, aside: &Path) -> String {
     let q = |p: &Path| shell_quote(&p.to_string_lossy());
-    let (staged, codesign) = (q(staging), verify::codesign_args(&staging.to_string_lossy()));
-    let codesign: Vec<String> = codesign.iter().map(|a| shell_quote(a)).collect();
-    let spctl: Vec<String> = verify::spctl_args(&staging.to_string_lossy()).iter().map(|a| shell_quote(a)).collect();
+    let name = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let template = shell_quote(&format!("{}.XXXXXXXX", staging.to_string_lossy()));
+    // The copy's path is only known inside the script: "$c".
+    const COPY: &str = "\u{0}copy";
+    let at_copy =
+        |args: Vec<String>| args.iter().map(|a| if a == COPY { "\"$c\"".to_string() } else { shell_quote(a) }).collect::<Vec<_>>().join(" ");
     let mut script = format!(
-        "{DITTO} {} {staged} && if ! {{ {CHOWN} -R {ADMIN_OWNER} {staged} && {CODESIGN} {} && out=$({SPCTL} {} 2>&1) && printf '%s\\n' \"$out\" | /usr/bin/grep -qx 'source=Notarized Developer ID'; }}; then /bin/rm -rf {staged}; exit {ADMIN_UNVERIFIED}; fi && ",
+        "d=$({MKTEMP} -d {template}) || exit 1; trap '/bin/rm -rf \"$d\"' EXIT; c=\"$d\"/{}; {DITTO} {} \"$c\" || exit 1; \
+         if ! {{ {CHOWN} -R {ADMIN_OWNER} \"$c\" && {CODESIGN} {} && out=$({SPCTL} {} 2>&1) && printf '%s\\n' \"$out\" | /usr/bin/grep -qx 'source=Notarized Developer ID'; }}; then exit {ADMIN_UNVERIFIED}; fi; ",
+        shell_quote(&name),
         q(source),
-        codesign.join(" "),
-        spctl.join(" "),
+        at_copy(verify::codesign_args(COPY)),
+        at_copy(verify::spctl_args(COPY)),
     );
     if replace_dest {
-        script.push_str(&format!("/bin/mv {} {} && /bin/mv {staged} {} && /bin/rm -rf {}", q(dest), q(aside), q(dest), q(aside)));
+        script.push_str(&format!("/bin/mv {} {} && /bin/mv \"$c\" {} && /bin/rm -rf {}", q(dest), q(aside), q(dest), q(aside)));
     } else {
-        script.push_str(&format!("/bin/mv {staged} {}", q(dest)));
+        script.push_str(&format!("/bin/mv \"$c\" {}", q(dest)));
     }
     if let Some(elsewhere) = elsewhere {
         script.push_str(&format!(" && /bin/rm -rf {}", q(elsewhere)));
@@ -421,9 +426,11 @@ mod tests {
         );
         let script = admin_script(source, staging, dest, true, None, aside);
         let at = |needle: &str| script.find(needle).unwrap_or_else(|| panic!("{needle} in {script}"));
-        // Root owns its copy before it is checked, so nothing can change it in between.
-        assert!(at(DITTO) < at(CHOWN) && at(CHOWN) < at(CODESIGN) && at(CODESIGN) < at(SPCTL) && at(SPCTL) < at("/bin/mv"));
-        assert!(script.contains(&format!("{CHOWN} -R root:wheel {}", shell_quote(&staging.to_string_lossy()))), "root owns what it puts in place");
+        // A fresh folder of root's own first; inside it, root owns its copy before checking it.
+        assert!(at(MKTEMP) < at(DITTO) && at(DITTO) < at(CHOWN) && at(CHOWN) < at(CODESIGN) && at(CODESIGN) < at(SPCTL) && at(SPCTL) < at("/bin/mv"));
+        assert!(script.contains("-d '/Applications/.Method Budget.app.installing-1.XXXXXXXX'"), "beside the destination");
+        assert!(script.contains(r#"trap '/bin/rm -rf "$d"' EXIT"#), "the folder goes on every path");
+        assert!(script.contains(&format!(r#"{CHOWN} -R root:wheel "$c""#)), "root owns what it puts in place");
         assert!(script.contains(&shell_quote(&format!("-R={}", verify::requirement()))), "the team requirement, quoted");
         assert!(script.contains("exit 5"));
 
@@ -432,23 +439,47 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src.app")).unwrap();
         std::fs::create_dir_all(dir.join("dest.app")).unwrap();
+        std::fs::write(dir.join("src.app/new"), "new").unwrap();
         let run_with = |chown_ok: bool, codesign_ok: bool, notarised: bool| {
-            let script = admin_script(&dir.join("src.app"), &dir.join("staging.app"), &dir.join("dest.app"), true, None, &dir.join("aside.app"))
-                .replace(DITTO, "/bin/cp -R")
-                .replace(CHOWN, if chown_ok { "true" } else { "false" })
-                .replace(CODESIGN, if codesign_ok { "true" } else { "false" })
-                .replace(SPCTL, if notarised { "printf 'x: accepted\\nsource=Notarized Developer ID\\n'" } else { "printf 'x: rejected\\n'" });
+            let script =
+                admin_script(&dir.join("src.app"), &dir.join(".dest.app.installing-1"), &dir.join("dest.app"), true, None, &dir.join("aside.app"))
+                    .replace(DITTO, "/bin/cp -R")
+                    .replace(CHOWN, if chown_ok { "true" } else { "false" })
+                    .replace(CODESIGN, if codesign_ok { "true" } else { "false" })
+                    .replace(SPCTL, if notarised { "printf 'x: accepted\\nsource=Notarized Developer ID\\n'" } else { "printf 'x: rejected\\n'" });
             Command::new("/bin/sh").args(["-c", &script]).status().unwrap().code()
+        };
+        // Nothing but the app (and the source) is left in the folder afterwards.
+        let left = || {
+            let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            names.sort();
+            names
         };
         let run = |codesign_ok: bool, notarised: bool| run_with(true, codesign_ok, notarised);
         assert_eq!(run_with(false, true, true), Some(5), "a copy root can't own is removed");
-        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
+        assert_eq!(left(), ["dest.app", "src.app"], "nothing moved, no folder left");
+        assert!(!dir.join("dest.app/new").exists());
         assert_eq!(run(false, true), Some(5));
-        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
+        assert_eq!(left(), ["dest.app", "src.app"]);
         assert_eq!(run(true, false), Some(5));
-        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
+        assert_eq!(left(), ["dest.app", "src.app"]);
         assert_eq!(run(true, true), Some(0));
-        assert!(!dir.join("staging.app").exists() && !dir.join("aside.app").exists() && dir.join("dest.app").exists());
+        assert_eq!(left(), ["dest.app", "src.app"], "swapped in; the old copy and the folder are gone");
+        assert!(dir.join("dest.app/new").exists(), "the new copy is in place");
+
+        // Through AppleScript as the real step sends it (without administrator rights, which
+        // only the prompt adds): the quoting survives both layers.
+        std::fs::write(dir.join("src.app/newer"), "newer").unwrap();
+        let script =
+            admin_script(&dir.join("src.app"), &dir.join(".dest.app.installing-1"), &dir.join("dest.app"), true, None, &dir.join("aside.app"))
+                .replace(DITTO, "/bin/cp -R")
+                .replace(CHOWN, "true")
+                .replace(CODESIGN, "true")
+                .replace(SPCTL, "printf 'x: accepted\\nsource=Notarized Developer ID\\n'");
+        let ok = Command::new(OSASCRIPT).args(["-e", &format!("do shell script \"{}\"", applescript_escape(&script))]).status().unwrap();
+        assert!(ok.success());
+        assert_eq!(left(), ["dest.app", "src.app"]);
+        assert!(dir.join("dest.app/newer").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
