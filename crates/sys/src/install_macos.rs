@@ -288,9 +288,11 @@ const ADMIN_UNVERIFIED: i32 = 5;
 /// administrator still writable by that account, with no password.
 const ADMIN_OWNER: &str = "root:wheel";
 
-/// The shell script the administrator step runs: copy into the staging name, check that copy
-/// as root (the same signature and notarisation checks as [`verify_bundle`]), give it to root,
-/// and only then swap it in. A copy that fails is removed and nothing else changes, so what root puts in
+/// The shell script the administrator step runs: copy into the staging name, give the copy to
+/// root at once (until then its files are the person's own, and a process of theirs could
+/// change them after a check), check that copy as root (the same signature and notarisation
+/// checks as [`verify_bundle`]), and only then swap it in. A copy that can't be given to root,
+/// or that fails a check, is removed. A copy that fails is removed and nothing else changes, so what root puts in
 /// place is what root checked, whatever happened to the mounted image after the launcher's
 /// own check.
 fn admin_script(source: &Path, staging: &Path, dest: &Path, replace_dest: bool, elsewhere: Option<&Path>, aside: &Path) -> String {
@@ -299,7 +301,7 @@ fn admin_script(source: &Path, staging: &Path, dest: &Path, replace_dest: bool, 
     let codesign: Vec<String> = codesign.iter().map(|a| shell_quote(a)).collect();
     let spctl: Vec<String> = verify::spctl_args(&staging.to_string_lossy()).iter().map(|a| shell_quote(a)).collect();
     let mut script = format!(
-        "{DITTO} {} {staged} && if ! {{ {CODESIGN} {} && out=$({SPCTL} {} 2>&1) && printf '%s\\n' \"$out\" | /usr/bin/grep -qx 'source=Notarized Developer ID'; }}; then /bin/rm -rf {staged}; exit {ADMIN_UNVERIFIED}; fi && {CHOWN} -R {ADMIN_OWNER} {staged} && ",
+        "{DITTO} {} {staged} && if ! {{ {CHOWN} -R {ADMIN_OWNER} {staged} && {CODESIGN} {} && out=$({SPCTL} {} 2>&1) && printf '%s\\n' \"$out\" | /usr/bin/grep -qx 'source=Notarized Developer ID'; }}; then /bin/rm -rf {staged}; exit {ADMIN_UNVERIFIED}; fi && ",
         q(source),
         codesign.join(" "),
         spctl.join(" "),
@@ -419,7 +421,8 @@ mod tests {
         );
         let script = admin_script(source, staging, dest, true, None, aside);
         let at = |needle: &str| script.find(needle).unwrap_or_else(|| panic!("{needle} in {script}"));
-        assert!(at(DITTO) < at(CODESIGN) && at(CODESIGN) < at(SPCTL) && at(SPCTL) < at(CHOWN) && at(CHOWN) < at("/bin/mv"));
+        // Root owns its copy before it is checked, so nothing can change it in between.
+        assert!(at(DITTO) < at(CHOWN) && at(CHOWN) < at(CODESIGN) && at(CODESIGN) < at(SPCTL) && at(SPCTL) < at("/bin/mv"));
         assert!(script.contains(&format!("{CHOWN} -R root:wheel {}", shell_quote(&staging.to_string_lossy()))), "root owns what it puts in place");
         assert!(script.contains(&shell_quote(&format!("-R={}", verify::requirement()))), "the team requirement, quoted");
         assert!(script.contains("exit 5"));
@@ -429,14 +432,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src.app")).unwrap();
         std::fs::create_dir_all(dir.join("dest.app")).unwrap();
-        let run = |codesign_ok: bool, notarised: bool| {
+        let run_with = |chown_ok: bool, codesign_ok: bool, notarised: bool| {
             let script = admin_script(&dir.join("src.app"), &dir.join("staging.app"), &dir.join("dest.app"), true, None, &dir.join("aside.app"))
                 .replace(DITTO, "/bin/cp -R")
-                .replace(CHOWN, "true")
+                .replace(CHOWN, if chown_ok { "true" } else { "false" })
                 .replace(CODESIGN, if codesign_ok { "true" } else { "false" })
                 .replace(SPCTL, if notarised { "printf 'x: accepted\\nsource=Notarized Developer ID\\n'" } else { "printf 'x: rejected\\n'" });
             Command::new("/bin/sh").args(["-c", &script]).status().unwrap().code()
         };
+        let run = |codesign_ok: bool, notarised: bool| run_with(true, codesign_ok, notarised);
+        assert_eq!(run_with(false, true, true), Some(5), "a copy root can't own is removed");
+        assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
         assert_eq!(run(false, true), Some(5));
         assert!(!dir.join("staging.app").exists() && dir.join("dest.app").exists(), "nothing moved");
         assert_eq!(run(true, false), Some(5));
