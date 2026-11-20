@@ -59,7 +59,7 @@ pub fn install(
     {
         return Err(crate::no_space(app, Some(needed), format!("{} free in {}", crate::megabytes(free), dir.display())));
     }
-    let staging = dir.join(format!(".Method-{}.AppImage.installing-{}", app.noun(), std::process::id()));
+    let staging = dir.join(crate::parse::appimage_staging(app.noun(), std::process::id()));
     let placed = std::fs::copy(&fetched.file, &staging)
         .and_then(|_| std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755)))
         .and_then(|()| std::fs::rename(&staging, &dest));
@@ -119,7 +119,7 @@ pub fn clean_up() {
     let Some(dir) = env_path("HOME").map(|h| h.join("Applications")) else { return };
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with(".Method-") && name.contains(".AppImage.installing-") && crate::stale(&entry.path()) {
+        if crate::parse::is_appimage_staging(&name) && crate::stale(&entry.path()) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
