@@ -95,6 +95,9 @@ version).
 - None waiting. `clipboard-win` 5.4.3 turned 14 days old on 2026-11-06, so its line is out of
   `scripts/crate-age-exceptions.txt`, and the owner's override, which named release v0.2.2
   only, ended with it.
+- **0.2.4 waits for the owner's yes** on its rehearsed commit (every app's signature
+  required, safer installs and launcher updates through an administrator, the ⌘ fix). The
+  owner's hand test of the update through an administrator passed on 2026-11-20.
 - 0.2.3 published 2026-11-18 (each app's signature checked, Open Sample, no growth when left
   open).
 - 0.2.2 published 2026-10-28 (open at login follows a moved launcher, the clearer Linux
